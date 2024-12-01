@@ -1,0 +1,61 @@
+body {
+    font-family: 'Arial', sans-serif;
+    background-color: #F1FAEE; /* Honeydew */
+}
+
+.card {
+    border-radius: 12px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.card-header {
+    background-color: #E63946; /* Imperial Red */
+    color: white;
+    padding: 1rem;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+}
+
+.card-body {
+    padding: 2rem;
+    background-color: white;
+}
+
+.modal-content {
+    border-radius: 12px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.modal-header {
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+}
+
+.modal-footer {
+    border-top: none;
+    padding: 1rem;
+}
+
+.text-muted {
+    font-size: 0.9rem;
+}
+
+.btn-danger {
+    background-color: #E63946; /* Imperial Red */
+    border: none;
+    font-weight: bold;
+}
+
+.btn-danger:hover {
+    background-color: #D32F2F; /* Darker Red */
+}
+
+.btn-outline-secondary {
+    border-color: #A8DADC; /* Powder Blue */
+    color: #457B9D; /* Celadon Blue */
+}
+
+.btn-outline-secondary:hover {
+    background-color: #A8DADC; /* Powder Blue */
+    color: white;
+}
