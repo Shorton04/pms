@@ -1,0 +1,276 @@
+REPORT zcmx_transfer NO STANDARD PAGE HEADING.
+
+*---------------------------------------------------------------------*
+* Selection Parameters
+*---------------------------------------------------------------------*
+PARAMETERS: p_plant TYPE iwerk OBLIGATORY,            "Plant
+            p_ordty TYPE auart DEFAULT 'YA07',        "Order Type
+            p_char  TYPE atinn DEFAULT 'INTERFACE',   "Characteristic
+            p_cval  TYPE atwrt DEFAULT 'CMX',         "Characteristic value
+            p_testr TYPE abap_bool DEFAULT abap_true. "Test run flag
+
+*---------------------------------------------------------------------*
+* Constants (replace with your CMX endpoint/credentials)
+*---------------------------------------------------------------------*
+CONSTANTS: gc_cmx_url  TYPE string VALUE 'https://cmx-test.example.com/api/maintenance',
+           gc_cmx_user TYPE string VALUE 'CMX_USER',
+           gc_cmx_pwd  TYPE string VALUE 'CMX_PWD'.
+
+*---------------------------------------------------------------------*
+* Local Types
+*---------------------------------------------------------------------*
+TYPES: BEGIN OF ty_item,
+         warpl TYPE warpl,  " Maintenance Plan
+         wapos TYPE wapos,  " Maintenance Item
+         auart TYPE auart,  " Order type
+         iwerk TYPE iwerk,  " Plant
+         objnr TYPE objnr,  " Object number
+         pstxt TYPE pstxt,  " Item text
+         equnr TYPE equnr,  " Equipment
+       END OF ty_item.
+
+DATA: gt_items TYPE TABLE OF ty_item,
+      gs_item  TYPE ty_item.
+
+*---------------------------------------------------------------------*
+* Main Logic
+*---------------------------------------------------------------------*
+START-OF-SELECTION.
+
+  " Step 1: Fetch Maintenance Items
+  PERFORM fetch_items USING p_plant p_ordty CHANGING gt_items.
+
+  IF gt_items IS INITIAL.
+    MESSAGE 'No maintenance items found.' TYPE 'I'.
+    RETURN.
+  ENDIF.
+
+  " Step 2: Filter CMX-relevant via AUSP
+  PERFORM filter_items USING p_char p_cval CHANGING gt_items.
+
+  IF gt_items IS INITIAL.
+    MESSAGE 'No CMX-relevant items found.' TYPE 'I'.
+    RETURN.
+  ENDIF.
+
+  " Step 3: Process Each Item
+  LOOP AT gt_items INTO gs_item.
+    PERFORM process_item USING gs_item.
+  ENDLOOP.
+
+  MESSAGE 'Processing finished.' TYPE 'S'.
+
+*---------------------------------------------------------------------*
+* Fetch Items
+*---------------------------------------------------------------------*
+FORM fetch_items USING    i_plant TYPE iwerk
+                          i_ordty TYPE auart
+                 CHANGING ct_items TYPE TABLE OF ty_item.
+
+  SELECT warpl wapos auart iwerk objnr pstxt equnr
+    FROM mpos
+    INTO TABLE @ct_items
+    WHERE iwerk = @i_plant
+      AND auart = @i_ordty.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* Filter by CMX relevance (AUSP INTERFACE = CMX)
+*---------------------------------------------------------------------*
+FORM filter_items USING    i_char TYPE atinn
+                           i_cval TYPE atwrt
+                  CHANGING ct_items TYPE TABLE OF ty_item.
+
+  DATA: lt_objnr TYPE TABLE OF objnr,
+        lt_ausp  TYPE TABLE OF ausp.
+
+  LOOP AT ct_items INTO DATA(ls).
+    APPEND ls-objnr TO lt_objnr.
+  ENDLOOP.
+
+  DELETE ADJACENT DUPLICATES FROM lt_objnr.
+
+  SELECT objnr
+    FROM ausp
+    INTO TABLE @DATA(lt_valid)
+    FOR ALL ENTRIES IN @lt_objnr
+    WHERE objnr = @lt_objnr
+      AND atinn = @i_char
+      AND atwrt = @i_cval.
+
+  DELETE ct_items WHERE objnr NOT IN lt_valid.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* Process Each Item
+*---------------------------------------------------------------------*
+FORM process_item USING is_item TYPE ty_item.
+
+  DATA: lv_payload TYPE string,
+        lv_logid   TYPE char20,
+        lv_status  TYPE zde_status,
+        lv_http    TYPE string,
+        lv_resp    TYPE string.
+
+  " Step 1: Build JSON payload
+  PERFORM build_payload USING is_item CHANGING lv_payload.
+
+  " Step 2: Insert into Log (PENDING)
+  lv_logid = |{ sy-datum }{ sy-uzeit }_{ sy-uname }|.
+  PERFORM insert_log USING lv_logid is_item lv_payload 'CREATE'.
+
+  " Test Run? -> Just mark OK
+  IF p_testr = abap_true.
+    PERFORM update_log USING lv_logid 'TEST-OK' '000' 'Test run only'.
+    RETURN.
+  ENDIF.
+
+  " Step 3: Send to CMX
+  PERFORM send_http USING lv_payload
+                    CHANGING lv_http lv_resp.
+
+  " Step 4: Update Log based on result
+  IF lv_http CP '2*'.
+    PERFORM update_log USING lv_logid 'SENT' lv_http lv_resp.
+  ELSE.
+    PERFORM update_log USING lv_logid 'ERROR' lv_http lv_resp.
+    PERFORM send_email USING lv_logid lv_http lv_resp lv_payload.
+  ENDIF.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* Build Payload (simplified JSON)
+*---------------------------------------------------------------------*
+FORM build_payload USING    is_item TYPE ty_item
+                   CHANGING ev_json TYPE string.
+
+  CONCATENATE
+    '{'
+    |"Plan":"| is_item-warpl | '",'
+    |"Item":"| is_item-wapos | '",'
+    |"Plant":"| is_item-iwerk | '",'
+    |"Equip":"| is_item-equnr | '",'
+    |"Text":"| is_item-pstxt | '"'
+    '}'
+    INTO ev_json SEPARATED BY space.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* Insert into Log
+*---------------------------------------------------------------------*
+FORM insert_log USING i_logid   TYPE char20
+                       i_item   TYPE ty_item
+                       i_payload TYPE string
+                       i_msgtype TYPE char10.
+
+  DATA ls TYPE zcmx_log.
+
+  ls-mandt      = sy-mandt.
+  ls-log_id     = i_logid.
+  ls-sysid      = sy-sysid.
+  ls-maint_plan = i_item-warpl.
+  ls-maint_item = i_item-wapos.
+  ls-floc_eq    = i_item-objnr.
+  ls-msg_type   = i_msgtype.
+  ls-status     = 'PENDING'.
+  ls-payload    = i_payload.
+  ls-created_by = sy-uname.
+  ls-created_on = sy-datum.
+  ls-created_at = sy-uzeit.
+
+  INSERT zcmx_log FROM ls.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* Update Log
+*---------------------------------------------------------------------*
+FORM update_log USING i_logid TYPE char20
+                       i_stat  TYPE char10
+                       i_http  TYPE string
+                       i_msg   TYPE string.
+
+  UPDATE zcmx_log
+     SET status    = i_stat,
+         http_stat = i_http,
+         error_msg = i_msg,
+         sent_on   = sy-datum,
+         sent_at   = sy-uzeit
+   WHERE log_id    = i_logid.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* Send HTTP to CMX
+*---------------------------------------------------------------------*
+FORM send_http USING    i_payload TYPE string
+               CHANGING ev_http   TYPE string
+                        ev_resp   TYPE string.
+
+  DATA lo_http TYPE REF TO if_http_client.
+
+  TRY.
+      cl_http_client=>create_by_url(
+        EXPORTING url = gc_cmx_url
+        RECEIVING client = lo_http ).
+
+      lo_http->request->set_method( if_http_request=>co_request_method_post ).
+      lo_http->request->set_header_field( name = 'Content-Type' value = 'application/json' ).
+
+      " Simple basic auth
+      DATA(lv_auth) = gc_cmx_user && ':' && gc_cmx_pwd.
+      CALL FUNCTION 'SCMS_BASE64_ENCODE_STR'
+        EXPORTING input = lv_auth
+        IMPORTING output = DATA(lv_auth_b64).
+
+      lo_http->request->set_header_field( name = 'Authorization' value = |Basic { lv_auth_b64 }| ).
+      lo_http->request->set_cdata( i_payload ).
+
+      lo_http->send( ).
+      lo_http->receive( ).
+
+      ev_http = lo_http->response->get_status( ).
+      ev_resp = lo_http->response->get_cdata( ).
+
+    CATCH cx_root INTO DATA(lx).
+      ev_http = '000'.
+      ev_resp = lx->get_text( ).
+  ENDTRY.
+
+ENDFORM.
+
+*---------------------------------------------------------------------*
+* Send Error Email
+*---------------------------------------------------------------------*
+FORM send_email USING i_logid TYPE char20
+                       i_http  TYPE string
+                       i_msg   TYPE string
+                       i_payload TYPE string.
+
+  DATA lo_send TYPE REF TO cl_bcs.
+  DATA lo_doc  TYPE REF TO cl_document_bcs.
+  DATA lv_subject TYPE string.
+  DATA lv_text    TYPE string.
+
+  lv_subject = |CMX Transfer ERROR: { i_logid }|.
+  lv_text = |LogID: { i_logid } | && cl_abap_char_utilities=>newline &&
+            |HTTP: { i_http } | && cl_abap_char_utilities=>newline &&
+            |Message: { i_msg } | && cl_abap_char_utilities=>newline &&
+            |Payload: { i_payload }|.
+
+  lo_send = cl_bcs=>create_persistent( ).
+  lo_doc = cl_document_bcs=>create_document(
+              i_type    = 'RAW'
+              i_text    = lv_text
+              i_subject = lv_subject ).
+
+  lo_send->set_document( lo_doc ).
+  lo_send->add_recipient( cl_cam_address_bcs=>create_internet_address( 'it-support@example.com' ) ).
+  lo_send->send( i_with_error_screen = 'X' ).
+  COMMIT WORK.
+
+ENDFORM.
