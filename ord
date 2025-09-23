@@ -1,0 +1,56 @@
+*&———————————————————————*
+*& Report ZIN_CMX_WORKORDER
+*&———————————————————————*
+*& CMX Work Order Interface - Main Program
+*& Send Maintenance Orders to CMX System
+*&———————————————————————*
+REPORT zin_cmx_workorder.
+
+*–––––––––––––––––––––––––––––––––––*
+
+- Include Programs
+  *–––––––––––––––––––––––––––––––––––*
+  INCLUDE zin_cmx_workorder_top.    “ Global Data Declarations
+  INCLUDE zin_cmx_workorder_sel.    “ Selection Screen
+  INCLUDE zin_cmx_workorder_f01.    “ Subroutines
+
+*–––––––––––––––––––––––––––––––––––*
+
+- Initialization
+  *–––––––––––––––––––––––––––––––––––*
+  INITIALIZATION.
+  PERFORM initialization.
+
+*–––––––––––––––––––––––––––––––––––*
+
+- At Selection Screen Events
+  *–––––––––––––––––––––––––––––––––––*
+  AT SELECTION-SCREEN.
+  PERFORM validate_selection_screen.
+
+AT SELECTION-SCREEN OUTPUT.
+PERFORM modify_selection_screen.
+
+*–––––––––––––––––––––––––––––––––––*
+
+- Start of Selection
+  *–––––––––––––––––––––––––––––––––––*
+  START-OF-SELECTION.
+  “ Record execution time
+  gv_execution_time = sy-uzeit.
+  
+  “ Execute main processing
+  PERFORM main_processing.
+
+*–––––––––––––––––––––––––––––––––––*
+
+- End of Selection
+  *–––––––––––––––––––––––––––––––––––*
+  END-OF-SELECTION.
+  “ Display results
+  PERFORM display_results.
+  
+  “ Log execution if not test mode
+  IF p_test IS INITIAL.
+  PERFORM log_execution.
+  ENDIF.
