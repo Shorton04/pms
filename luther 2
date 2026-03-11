@@ -1,51 +1,60 @@
- METHOD display_write.
-    DATA: ls_final       TYPE ty_final,
-          lv_exec_date   TYPE char10,
-          lv_exec_time   TYPE char11.
+METHOD display_write.
 
-    lv_exec_date = lcl_util=>format_date_mdy( sy-datum ).
-    lv_exec_time = lcl_util=>format_time_12h( sy-uzeit ).
+  DATA: ls_final     TYPE ty_final,
+        lv_exec_date TYPE char10,
+        lv_exec_time TYPE char11.
 
-    WRITE: / text-h01.
-    WRITE: / text-h02.
-    WRITE: / 'Executed by:', sy-uname.
-    WRITE: / 'Executed on:', lv_exec_date, lv_exec_time.
-    SKIP.
+  lv_exec_date = lcl_util=>format_date_mdy( sy-datum ).
+  lv_exec_time = lcl_util=>format_time_12h( sy-uzeit ).
 
-    FORMAT COLOR COL_HEADING INTENSIFIED ON.
-    WRITE: / text-c01,
-             20 text-c02,
-             35 text-c03,
-             50 text-c04,
-             68 text-c05,
-             85 text-c06,
-             105 text-c07,
-             130 text-c08,
-             165 text-c09.
-    WRITE: / text-c10,
-             40 text-c11,
-             60 text-c12,
-             80 text-c13,
-             100 text-c14,
-             115 text-c15.
-    FORMAT RESET.
+  WRITE: / text-h01.
+  WRITE: / text-h02.
+  WRITE: / 'Executed by:', sy-uname.
+  WRITE: / 'Executed on:', lv_exec_date, lv_exec_time.
+  SKIP.
 
-    LOOP AT lcl_model=>gt_final INTO ls_final.
-      WRITE: / ls_final-material,
-               20 ls_final-changed_on,
-               35 ls_final-change_time,
-               50 ls_final-changed_by,
-               68 ls_final-tabname,
-               85 ls_final-fname,
-               105 ls_final-change_type,
-               130 ls_final-old_contents,
-               165 ls_final-new_contents.
-      WRITE: / ls_final-table_key,
-               40 ls_final-change_object,
-               60 ls_final-object_value,
-               80 ls_final-change_number,
-               100 ls_final-tcode,
-               115 ls_final-mat_desc.
-      ULINE.
-    ENDLOOP.
-  ENDMETHOD.
+  FORMAT COLOR COL_HEADING INTENSIFIED ON.
+  WRITE: /1   text-c01,
+           20  text-c02,
+           35  text-c03,
+           50  text-c04,
+           65  text-c05,
+           78  text-c06,
+           92  text-c07,
+           112 text-c08,
+           150 text-c09.
+
+  WRITE: /1   text-c10,
+           35  text-c11,
+           55  text-c12,
+           85  text-c13,
+           102 text-c14,
+           118 text-c15.
+  FORMAT RESET.
+
+  ULINE.
+
+  LOOP AT lcl_model=>gt_final INTO ls_final.
+
+    WRITE: /1(18)   ls_final-material,
+             20(12) ls_final-changed_on,
+             35(12) ls_final-change_time,
+             50(12) ls_final-changed_by,
+             65(10) ls_final-tabname,
+             78(12) ls_final-fname,
+             92(15) ls_final-change_type,
+             112(35) ls_final-old_contents,
+             150(35) ls_final-new_contents.
+
+    WRITE: /1(30)   ls_final-table_key,
+             35(15) ls_final-change_object,
+             55(28) ls_final-object_value,
+             85(15) ls_final-change_number,
+             102(10) ls_final-tcode,
+             118(35) ls_final-mat_desc.
+
+    ULINE.
+
+  ENDLOOP.
+
+ENDMETHOD.
