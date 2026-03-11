@@ -78,6 +78,19 @@ SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-t02.
 SELECTION-SCREEN END OF BLOCK b2.
 
 ************************************************************************
+* HELPER CLASS
+************************************************************************
+CLASS lcl_util DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS:
+      format_date_mdy
+        IMPORTING
+          iv_date TYPE sydatum
+        RETURNING
+          VALUE(rv_text) TYPE char10.
+ENDCLASS.
+
+************************************************************************
 * MODEL CLASS
 ************************************************************************
 CLASS lcl_model DEFINITION.
@@ -116,17 +129,6 @@ CLASS lcl_model DEFINITION.
 ENDCLASS.
 
 ************************************************************************
-* EVENT HANDLER CLASS
-************************************************************************
-CLASS lcl_event_handler DEFINITION.
-  PUBLIC SECTION.
-    METHODS:
-      on_link_click
-        FOR EVENT link_click OF cl_salv_events_table
-        IMPORTING row column.
-ENDCLASS.
-
-************************************************************************
 * VIEW CLASS
 ************************************************************************
 CLASS lcl_view DEFINITION.
@@ -137,13 +139,38 @@ CLASS lcl_view DEFINITION.
 ENDCLASS.
 
 ************************************************************************
+* HELPER CLASS IMPLEMENTATION
+************************************************************************
+CLASS lcl_util IMPLEMENTATION.
+  METHOD format_date_mdy.
+    CLEAR rv_text.
+    IF iv_date IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    rv_text = |{ iv_date+4(2) }/{ iv_date+6(2) }/{ iv_date+0(4) }|.
+
+    " remove leading zero on month
+    IF rv_text+0(1) = '0'.
+      SHIFT rv_text LEFT BY 1 PLACES.
+    ENDIF.
+
+    " find slash between month and day, then remove leading zero on day
+    IF rv_text+2(1) = '/' AND rv_text+3(1) = '0'.
+      rv_text = |{ rv_text+0(3) }{ rv_text+4 }|.
+    ELSEIF rv_text+1(1) = '/' AND rv_text+2(1) = '0'.
+      rv_text = |{ rv_text+0(2) }{ rv_text+3 }|.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+************************************************************************
 * MODEL CLASS IMPLEMENTATION
 ************************************************************************
 CLASS lcl_model IMPLEMENTATION.
 
   METHOD validate_material_input.
     DATA lv_matnr TYPE mara-matnr.
-
     FIELD-SYMBOLS <fs_matnr> LIKE LINE OF it_matnr.
 
     LOOP AT it_matnr ASSIGNING <fs_matnr>.
@@ -275,26 +302,10 @@ CLASS lcl_model IMPLEMENTATION.
     ENDLOOP.
 
     SORT gt_final BY plant ASCENDING
-                     batch ASCENDING
-                     material_type ASCENDING.
+                     plant_name ASCENDING
+                     batch ASCENDING.
   ENDMETHOD.
 
-ENDCLASS.
-
-************************************************************************
-* EVENT HANDLER IMPLEMENTATION
-************************************************************************
-CLASS lcl_event_handler IMPLEMENTATION.
-  METHOD on_link_click.
-    READ TABLE lcl_model=>gt_final INTO DATA(ls_final) INDEX row.
-    IF sy-subrc <> 0.
-      RETURN.
-    ENDIF.
-
-    IF column = 'PLANT'.
-      " no action
-    ENDIF.
-  ENDMETHOD.
 ENDCLASS.
 
 ************************************************************************
@@ -303,12 +314,15 @@ ENDCLASS.
 CLASS lcl_view IMPLEMENTATION.
 
   METHOD display_write.
-    DATA ls_final TYPE ty_final.
+    DATA: ls_final     TYPE ty_final,
+          lv_exec_date TYPE char10.
+
+    lv_exec_date = lcl_util=>format_date_mdy( sy-datum ).
 
     WRITE: / text-h01.
     WRITE: / text-h02.
     WRITE: / 'Executed by:', sy-uname.
-    WRITE: / 'Executed on:', sy-datum, sy-uzeit.
+    WRITE: / 'Executed on:', lv_exec_date, sy-uzeit.
     SKIP.
 
     FORMAT COLOR COL_HEADING INTENSIFIED ON.
@@ -336,7 +350,11 @@ CLASS lcl_view IMPLEMENTATION.
           lo_column    TYPE REF TO cl_salv_column_table,
           lo_functions TYPE REF TO cl_salv_functions_list,
           lo_display   TYPE REF TO cl_salv_display_settings,
-          lo_sorts     TYPE REF TO cl_salv_sorts.
+          lo_sorts     TYPE REF TO cl_salv_sorts,
+          lo_header    TYPE REF TO cl_salv_form_layout_grid,
+          lv_exec_date TYPE char10.
+
+    lv_exec_date = lcl_util=>format_date_mdy( sy-datum ).
 
     TRY.
         cl_salv_table=>factory(
@@ -418,6 +436,30 @@ CLASS lcl_view IMPLEMENTATION.
         lo_display->set_striped_pattern( abap_true ).
         lo_display->set_list_header( text-h01 ).
 
+        CREATE OBJECT lo_header.
+
+        lo_header->create_label(
+          row    = 1
+          column = 1
+          text   = text-h01 ).
+
+        lo_header->create_label(
+          row    = 2
+          column = 1
+          text   = text-h02 ).
+
+        lo_header->create_label(
+          row    = 3
+          column = 1
+          text   = |Executed by: { sy-uname }| ).
+
+        lo_header->create_label(
+          row    = 4
+          column = 1
+          text   = |Executed on: { lv_exec_date } { sy-uzeit }| ).
+
+        lo_alv->set_top_of_list( lo_header ).
+
         lo_sorts = lo_alv->get_sorts( ).
 
         TRY.
@@ -429,14 +471,14 @@ CLASS lcl_view IMPLEMENTATION.
 
         TRY.
             lo_sorts->add_sort(
-              columnname = 'BATCH'
+              columnname = 'PLANT_NAME'
               sequence   = if_salv_c_sort=>sort_up ).
           CATCH cx_salv_not_found cx_salv_existing cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_sorts->add_sort(
-              columnname = 'MATERIAL_TYPE'
+              columnname = 'BATCH'
               sequence   = if_salv_c_sort=>sort_up ).
           CATCH cx_salv_not_found cx_salv_existing cx_salv_data_error.
         ENDTRY.
