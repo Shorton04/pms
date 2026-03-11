@@ -1,3 +1,85 @@
+REPORT ztest_kit.
+
+TABLES: mara,
+        mcha.
+
+************************************************************************
+* TEXT ELEMENTS TO MAINTAIN IN SE38
+************************************************************************
+* TEXT-T01 = Criteria
+* TEXT-T02 = Select a View
+*
+* TEXT-E01 = Invalid Material
+* TEXT-E02 = Date specified is in the future, enter a valid date
+* TEXT-E03 = Invalid Plant
+* TEXT-E04 = No data found.
+*
+* TEXT-H01 = Material Master Report
+* TEXT-H02 = Material Batch View
+*
+* TEXT-C01 = Plant
+* TEXT-C02 = Plant Name
+* TEXT-C03 = Batch
+* TEXT-C04 = Material Type
+* TEXT-C05 = Material Group
+* TEXT-C06 = Industry Sector
+
+************************************************************************
+* TYPES
+************************************************************************
+TYPES: ty_r_matnr TYPE RANGE OF mara-matnr,
+       ty_r_ersda TYPE RANGE OF mcha-ersda.
+
+TYPES: BEGIN OF ty_raw,
+         matnr TYPE mara-matnr,
+         mtart TYPE mara-mtart,
+         matkl TYPE mara-matkl,
+         mbrsh TYPE mara-mbrsh,
+         werks TYPE mcha-werks,
+         charg TYPE mcha-charg,
+         ersda TYPE mcha-ersda,
+       END OF ty_raw.
+TYPES tt_raw TYPE STANDARD TABLE OF ty_raw WITH DEFAULT KEY.
+
+TYPES: BEGIN OF ty_t001w,
+         werks TYPE t001w-werks,
+         name1 TYPE t001w-name1,
+       END OF ty_t001w.
+TYPES tt_t001w TYPE STANDARD TABLE OF ty_t001w WITH DEFAULT KEY.
+
+TYPES: BEGIN OF ty_final,
+         plant           TYPE mcha-werks,
+         plant_name      TYPE t001w-name1,
+         batch           TYPE mcha-charg,
+         material_type   TYPE mara-mtart,
+         material_group  TYPE mara-matkl,
+         industry_sector TYPE mara-mbrsh,
+         cell_color      TYPE lvc_t_scol,
+       END OF ty_final.
+TYPES tt_final TYPE STANDARD TABLE OF ty_final WITH DEFAULT KEY.
+
+************************************************************************
+* SELECTION SCREEN
+************************************************************************
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-t01.
+  SELECT-OPTIONS:
+    s_matnr FOR mara-matnr,
+    s_ersda FOR mcha-ersda.
+
+  PARAMETERS:
+    p_werks TYPE mcha-werks.
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-t02.
+  PARAMETERS:
+    p_writ RADIOBUTTON GROUP rg1,
+    p_alv  RADIOBUTTON GROUP rg1 DEFAULT 'X',
+    p_hili AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN END OF BLOCK b2.
+
+************************************************************************
+* HELPER CLASS
+************************************************************************
 CLASS lcl_util DEFINITION.
   PUBLIC SECTION.
     CLASS-METHODS:
@@ -15,7 +97,57 @@ CLASS lcl_util DEFINITION.
 ENDCLASS.
 
 
+************************************************************************
+* MODEL CLASS
+************************************************************************
+CLASS lcl_model DEFINITION.
+  PUBLIC SECTION.
+    CLASS-DATA:
+      gt_raw   TYPE tt_raw,
+      gt_t001w TYPE tt_t001w,
+      gt_final TYPE tt_final.
 
+    CLASS-METHODS:
+      validate_material_input
+        IMPORTING
+          it_matnr TYPE ty_r_matnr,
+
+      validate_created_on_input
+        IMPORTING
+          it_ersda TYPE ty_r_ersda,
+
+      validate_plant_input
+        IMPORTING
+          iv_werks TYPE mcha-werks.
+
+    METHODS:
+      get_data
+        IMPORTING
+          it_matnr TYPE ty_r_matnr
+          it_ersda TYPE ty_r_ersda
+          iv_werks TYPE mcha-werks
+          iv_hili  TYPE abap_bool.
+
+  PRIVATE SECTION.
+    METHODS:
+      build_final_output
+        IMPORTING
+          iv_hili TYPE abap_bool.
+ENDCLASS.
+
+************************************************************************
+* VIEW CLASS
+************************************************************************
+CLASS lcl_view DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      display_write,
+      display_alv.
+ENDCLASS.
+
+************************************************************************
+* HELPER CLASS IMPLEMENTATION
+************************************************************************
 CLASS lcl_util IMPLEMENTATION.
   METHOD format_date_mdy.
     CLEAR rv_text.
@@ -47,49 +179,372 @@ CLASS lcl_util IMPLEMENTATION.
 ENDCLASS.
 
 
-DATA: lo_alv       TYPE REF TO cl_salv_table,
-      lo_columns   TYPE REF TO cl_salv_columns_table,
-      lo_column    TYPE REF TO cl_salv_column_table,
-      lo_functions TYPE REF TO cl_salv_functions_list,
-      lo_display   TYPE REF TO cl_salv_display_settings,
-      lo_sorts     TYPE REF TO cl_salv_sorts,
-      lo_header    TYPE REF TO cl_salv_form_layout_grid,
-      lv_exec_date TYPE char10,
-      lv_exec_time TYPE char8.
+************************************************************************
+* MODEL CLASS IMPLEMENTATION
+************************************************************************
+CLASS lcl_model IMPLEMENTATION.
 
+  METHOD validate_material_input.
+    DATA lv_matnr TYPE mara-matnr.
+    FIELD-SYMBOLS <fs_matnr> LIKE LINE OF it_matnr.
 
-lv_exec_date = lcl_util=>format_date_mdy( sy-datum ).
-lv_exec_time = lcl_util=>format_time_military( sy-uzeit ).
+    LOOP AT it_matnr ASSIGNING <fs_matnr>.
+      IF <fs_matnr>-low IS NOT INITIAL.
+        SELECT SINGLE matnr
+          INTO @lv_matnr
+          FROM mara
+          WHERE matnr = @<fs_matnr>-low.
+        IF sy-subrc <> 0.
+          MESSAGE TEXT-e01 TYPE 'E'.
+        ENDIF.
+      ENDIF.
 
+      IF <fs_matnr>-high IS NOT INITIAL.
+        SELECT SINGLE matnr
+          INTO @lv_matnr
+          FROM mara
+          WHERE matnr = @<fs_matnr>-high.
+        IF sy-subrc <> 0.
+          MESSAGE TEXT-e01 TYPE 'E'.
+        ENDIF.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
 
+  METHOD validate_created_on_input.
+    DATA ls_ersda LIKE LINE OF it_ersda.
 
-text   = |Executed on: { lv_exec_date } { lv_exec_time }| ).
+    LOOP AT it_ersda INTO ls_ersda.
+      IF ls_ersda-low IS NOT INITIAL AND ls_ersda-low > sy-datum.
+        MESSAGE TEXT-e02 TYPE 'E'.
+      ENDIF.
 
+      IF ls_ersda-high IS NOT INITIAL AND ls_ersda-high > sy-datum.
+        MESSAGE TEXT-e02 TYPE 'E'.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
 
+  METHOD validate_plant_input.
+    DATA lv_werks TYPE t001w-werks.
 
-lv_exec_date = lcl_util=>format_date_mdy( sy-datum ).
-lv_exec_time = lcl_util=>format_time_military( sy-uzeit ).
+    IF iv_werks IS INITIAL.
+      RETURN.
+    ENDIF.
 
-CREATE OBJECT lo_header.
+    SELECT SINGLE werks
+      INTO @lv_werks
+      FROM t001w
+      WHERE werks = @iv_werks.
 
-lo_header->create_label(
-  row    = 1
-  column = 1
-  text   = text-h01 ).
+    IF sy-subrc <> 0.
+      MESSAGE TEXT-e03 TYPE 'E'.
+    ENDIF.
+  ENDMETHOD.
 
-lo_header->create_label(
-  row    = 2
-  column = 1
-  text   = text-h02 ).
+  METHOD get_data.
+    CLEAR: gt_raw, gt_t001w, gt_final.
 
-lo_header->create_label(
-  row    = 3
-  column = 1
-  text   = |Executed by: { sy-uname }| ).
+    SELECT a~matnr,
+           a~mtart,
+           a~matkl,
+           a~mbrsh,
+           b~werks,
+           b~charg,
+           b~ersda
+      FROM mara AS a
+      INNER JOIN mcha AS b
+        ON a~matnr = b~matnr
+      WHERE a~matnr IN @it_matnr
+        AND b~ersda IN @it_ersda
+        AND ( b~werks = @iv_werks OR @iv_werks IS INITIAL )
+      INTO TABLE @gt_raw.
 
-lo_header->create_label(
-  row    = 4
-  column = 1
-  text   = |Executed on: { lv_exec_date } { lv_exec_time }| ).
+    SORT gt_raw BY werks charg ersda matnr.
 
-lo_alv->set_top_of_list( lo_header ).
+    IF gt_raw IS INITIAL.
+      MESSAGE TEXT-e04 TYPE 'S' DISPLAY LIKE 'E'.
+      LEAVE LIST-PROCESSING.
+    ENDIF.
+
+    SELECT werks,
+           name1
+      INTO TABLE @gt_t001w
+      FROM t001w
+      FOR ALL ENTRIES IN @gt_raw
+      WHERE werks = @gt_raw-werks.
+
+    SORT gt_t001w BY werks.
+
+    build_final_output( iv_hili = iv_hili ).
+
+    IF gt_final IS INITIAL.
+      MESSAGE TEXT-e04 TYPE 'S' DISPLAY LIKE 'E'.
+      LEAVE LIST-PROCESSING.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD build_final_output.
+    DATA: ls_raw   TYPE ty_raw,
+          ls_final TYPE ty_final,
+          ls_t001w TYPE ty_t001w,
+          ls_scol  TYPE lvc_s_scol.
+
+    LOOP AT gt_raw INTO ls_raw.
+      CLEAR: ls_final, ls_t001w.
+
+      READ TABLE gt_t001w INTO ls_t001w
+        WITH KEY werks = ls_raw-werks
+        BINARY SEARCH.
+
+      ls_final-plant           = ls_raw-werks.
+      ls_final-plant_name      = ls_t001w-name1.
+      ls_final-batch           = ls_raw-charg.
+      ls_final-material_type   = ls_raw-mtart.
+      ls_final-material_group  = ls_raw-matkl.
+      ls_final-industry_sector = ls_raw-mbrsh.
+
+      IF iv_hili = abap_true.
+        CLEAR ls_scol.
+        ls_scol-fname = 'PLANT'.
+        ls_scol-color-col = 5.
+        ls_scol-color-int = 1.
+        ls_scol-color-inv = 0.
+        APPEND ls_scol TO ls_final-cell_color.
+      ENDIF.
+
+      APPEND ls_final TO gt_final.
+    ENDLOOP.
+
+    SORT gt_final BY plant ASCENDING
+                     plant_name ASCENDING
+                     batch ASCENDING.
+  ENDMETHOD.
+
+ENDCLASS.
+
+************************************************************************
+* VIEW CLASS IMPLEMENTATION
+************************************************************************
+CLASS lcl_view IMPLEMENTATION.
+
+  METHOD display_write.
+    DATA: ls_final     TYPE ty_final,
+          lv_exec_date TYPE char10.
+
+    lv_exec_date = lcl_util=>format_date_mdy( sy-datum ).
+
+    WRITE: / TEXT-h01.
+    WRITE: / TEXT-h02.
+    WRITE: / 'Executed by:', sy-uname.
+    WRITE: / 'Executed on:', lv_exec_date, sy-uzeit.
+    SKIP.
+
+    FORMAT COLOR COL_HEADING INTENSIFIED ON.
+    WRITE: / TEXT-c01,
+             15 TEXT-c02,
+             50 TEXT-c03,
+             70 TEXT-c04,
+             95 TEXT-c05,
+             120 TEXT-c06.
+    FORMAT RESET.
+
+    LOOP AT lcl_model=>gt_final INTO ls_final.
+      WRITE: / ls_final-plant,
+               15 ls_final-plant_name,
+               50 ls_final-batch,
+               70 ls_final-material_type,
+               95 ls_final-material_group,
+               120 ls_final-industry_sector.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD display_alv.
+    DATA: lo_alv       TYPE REF TO cl_salv_table,
+          lo_columns   TYPE REF TO cl_salv_columns_table,
+          lo_column    TYPE REF TO cl_salv_column_table,
+          lo_functions TYPE REF TO cl_salv_functions_list,
+          lo_display   TYPE REF TO cl_salv_display_settings,
+          lo_sorts     TYPE REF TO cl_salv_sorts,
+          lo_header    TYPE REF TO cl_salv_form_layout_grid,
+          lv_exec_date TYPE char10,
+          lv_exec_time TYPE char8.
+
+    lv_exec_date = lcl_util=>format_date_mdy( sy-datum ).
+    lv_exec_time = lcl_util=>format_time_military( sy-uzeit ).
+
+    TRY.
+        cl_salv_table=>factory(
+          IMPORTING
+            r_salv_table = lo_alv
+          CHANGING
+            t_table      = lcl_model=>gt_final ).
+
+        lo_columns = lo_alv->get_columns( ).
+
+        TRY.
+            lo_columns->set_optimize( ).
+          CATCH cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_columns->set_color_column( 'CELL_COLOR' ).
+          CATCH cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'PLANT' ).
+            lo_column->set_short_text(  CONV scrtext_s( TEXT-c01 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( TEXT-c01 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( TEXT-c01 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'PLANT_NAME' ).
+            lo_column->set_short_text(  CONV scrtext_s( TEXT-c02 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( TEXT-c02 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( TEXT-c02 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'BATCH' ).
+            lo_column->set_short_text(  CONV scrtext_s( TEXT-c03 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( TEXT-c03 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( TEXT-c03 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'MATERIAL_TYPE' ).
+            lo_column->set_short_text(  CONV scrtext_s( TEXT-c04 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( TEXT-c04 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( TEXT-c04 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'MATERIAL_GROUP' ).
+            lo_column->set_short_text(  CONV scrtext_s( TEXT-c05 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( TEXT-c05 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( TEXT-c05 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'INDUSTRY_SECTOR' ).
+            lo_column->set_short_text(  CONV scrtext_s( TEXT-c06 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( TEXT-c06 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( TEXT-c06 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'CELL_COLOR' ).
+            lo_column->set_technical( abap_true ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        lo_functions = lo_alv->get_functions( ).
+        lo_functions->set_all( abap_true ).
+
+        lo_display = lo_alv->get_display_settings( ).
+        lo_display->set_striped_pattern( abap_true ).
+        lo_display->set_list_header( TEXT-h01 ).
+
+        CREATE OBJECT lo_header.
+
+        lo_header->create_label(
+          row    = 1
+          column = 1
+          text   = TEXT-h01 ).
+
+        lo_header->create_label(
+          row    = 2
+          column = 1
+          text   = TEXT-h02 ).
+
+        lo_header->create_label(
+          row    = 3
+          column = 1
+          text   = |Executed by: { sy-uname }| ).
+
+        lo_header->create_label(
+          row    = 4
+          column = 1
+          text   = |Executed on: { lv_exec_date } { lv_exec_time }| ).
+
+        lo_alv->set_top_of_list( lo_header ).
+
+        lo_sorts = lo_alv->get_sorts( ).
+
+        TRY.
+            lo_sorts->add_sort(
+              columnname = 'PLANT'
+              sequence   = if_salv_c_sort=>sort_up ).
+          CATCH cx_salv_not_found cx_salv_existing cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_sorts->add_sort(
+              columnname = 'PLANT_NAME'
+              sequence   = if_salv_c_sort=>sort_up ).
+          CATCH cx_salv_not_found cx_salv_existing cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_sorts->add_sort(
+              columnname = 'BATCH'
+              sequence   = if_salv_c_sort=>sort_up ).
+          CATCH cx_salv_not_found cx_salv_existing cx_salv_data_error.
+        ENDTRY.
+
+        lo_alv->display( ).
+
+      CATCH cx_salv_msg INTO DATA(lx_msg).
+        MESSAGE lx_msg->get_text( ) TYPE 'I'.
+    ENDTRY.
+  ENDMETHOD.
+
+ENDCLASS.
+
+************************************************************************
+* DATA
+************************************************************************
+DATA: go_model TYPE REF TO lcl_model,
+      go_view  TYPE REF TO lcl_view.
+
+************************************************************************
+* VALIDATION
+************************************************************************
+AT SELECTION-SCREEN.
+  lcl_model=>validate_material_input(
+    it_matnr = s_matnr[] ).
+
+  lcl_model=>validate_created_on_input(
+    it_ersda = s_ersda[] ).
+
+  lcl_model=>validate_plant_input(
+    iv_werks = p_werks ).
+
+************************************************************************
+* MAIN PROCESS
+************************************************************************
+START-OF-SELECTION.
+  CREATE OBJECT go_model.
+  go_model->get_data(
+    it_matnr = s_matnr[]
+    it_ersda = s_ersda[]
+    iv_werks = p_werks
+    iv_hili  = COND abap_bool(
+                 WHEN p_hili = 'X' THEN abap_true
+                 ELSE abap_false ) ).
+
+  CREATE OBJECT go_view.
+
+  IF p_writ = 'X'.
+    go_view->display_write( ).
+  ELSE.
+    go_view->display_alv( ).
+  ENDIF.
