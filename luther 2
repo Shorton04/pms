@@ -601,122 +601,122 @@ CLASS lcl_view IMPLEMENTATION.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'MATERIAL' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c01 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c01 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c01 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c01 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c01 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c01 ) ).
             lo_column->set_cell_type( if_salv_c_cell_type=>hotspot ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'CHANGED_ON' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c02 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c02 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c02 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c02 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c02 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c02 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'CHANGE_TIME' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c03 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c03 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c03 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c03 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c03 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c03 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'CHANGED_BY' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c04 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c04 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c04 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c04 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c04 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c04 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'TABNAME' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c05 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c05 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c05 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c05 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c05 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c05 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'FNAME' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c06 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c06 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c06 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c06 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c06 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c06 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'CHANGE_TYPE' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c07 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c07 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c07 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c07 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c07 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c07 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'OLD_CONTENTS' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c08 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c08 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c08 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c08 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c08 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c08 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'NEW_CONTENTS' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c09 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c09 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c09 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c09 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c09 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c09 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'TABLE_KEY' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c10 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c10 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c10 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c10 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c10 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c10 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'CHANGE_OBJECT' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c11 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c11 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c11 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c11 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c11 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c11 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'OBJECT_VALUE' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c12 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c12 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c12 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c12 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c12 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c12 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'CHANGE_NUMBER' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c13 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c13 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c13 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c13 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c13 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c13 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'TCODE' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c14 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c14 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c14 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c14 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c14 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c14 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'MAT_DESC' ).
-            lo_column->set_short_text(  CONV scrtext_c( text-c15 ) ).
-            lo_column->set_medium_text( CONV scrtext_c( text-c15 ) ).
-            lo_column->set_long_text(   CONV scrtext_c( text-c15 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c15 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c15 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c15 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
