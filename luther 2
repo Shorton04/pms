@@ -1,4 +1,6 @@
-REPORT y19999999_mmr_matrep.
+REPORT ztest_kit.
+
+
 
 TABLES: mara,
         cdhdr.
@@ -69,7 +71,7 @@ TYPES tt_final TYPE STANDARD TABLE OF ty_final WITH DEFAULT KEY.
 ************************************************************************
 * SELECTION SCREEN
 ************************************************************************
-SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-t01.
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-t01.
   SELECT-OPTIONS:
     s_matnr FOR mara-matnr,
     s_udate FOR cdhdr-udate.
@@ -78,7 +80,7 @@ SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-t01.
     p_mtart TYPE mara-mtart.
 SELECTION-SCREEN END OF BLOCK b1.
 
-SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-t02.
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-t02.
   PARAMETERS:
     p_writ RADIOBUTTON GROUP rg1,
     p_alv  RADIOBUTTON GROUP rg1 DEFAULT 'X',
@@ -163,7 +165,7 @@ CLASS lcl_model IMPLEMENTATION.
           FROM mara
           WHERE matnr = @<fs_matnr>-low.
         IF sy-subrc <> 0.
-          MESSAGE text-e01 TYPE 'E'.
+          MESSAGE TEXT-e01 TYPE 'E'.
         ENDIF.
       ENDIF.
 
@@ -173,7 +175,7 @@ CLASS lcl_model IMPLEMENTATION.
           FROM mara
           WHERE matnr = @<fs_matnr>-high.
         IF sy-subrc <> 0.
-          MESSAGE text-e01 TYPE 'E'.
+          MESSAGE TEXT-e01 TYPE 'E'.
         ENDIF.
       ENDIF.
 
@@ -184,21 +186,21 @@ CLASS lcl_model IMPLEMENTATION.
     DATA ls_udate LIKE LINE OF it_udate.
 
     IF it_udate IS INITIAL.
-      MESSAGE text-e02 TYPE 'E'.
+      MESSAGE TEXT-e02 TYPE 'E'.
     ENDIF.
 
     LOOP AT it_udate INTO ls_udate.
 
       IF ls_udate-low IS INITIAL AND ls_udate-high IS INITIAL.
-        MESSAGE text-e02 TYPE 'E'.
+        MESSAGE TEXT-e02 TYPE 'E'.
       ENDIF.
 
       IF ls_udate-low IS NOT INITIAL AND ls_udate-low > sy-datum.
-        MESSAGE text-e03 TYPE 'E'.
+        MESSAGE TEXT-e03 TYPE 'E'.
       ENDIF.
 
       IF ls_udate-high IS NOT INITIAL AND ls_udate-high > sy-datum.
-        MESSAGE text-e03 TYPE 'E'.
+        MESSAGE TEXT-e03 TYPE 'E'.
       ENDIF.
 
     ENDLOOP.
@@ -217,7 +219,7 @@ CLASS lcl_model IMPLEMENTATION.
       WHERE mtart = @iv_mtart.
 
     IF sy-subrc <> 0.
-      MESSAGE text-e04 TYPE 'E'.
+      MESSAGE TEXT-e04 TYPE 'E'.
     ENDIF.
   ENDMETHOD.
 
@@ -250,7 +252,7 @@ CLASS lcl_model IMPLEMENTATION.
     DELETE ADJACENT DUPLICATES FROM gt_mara COMPARING matnr.
 
     IF gt_mara IS INITIAL.
-      MESSAGE text-e05 TYPE 'S' DISPLAY LIKE 'E'.
+      MESSAGE TEXT-e05 TYPE 'S' DISPLAY LIKE 'E'.
       LEAVE LIST-PROCESSING.
     ENDIF.
 
@@ -263,17 +265,17 @@ CLASS lcl_model IMPLEMENTATION.
     DELETE ADJACENT DUPLICATES FROM gt_objid COMPARING objectid.
 
     IF gt_objid IS INITIAL.
-      MESSAGE text-e05 TYPE 'S' DISPLAY LIKE 'E'.
+      MESSAGE TEXT-e05 TYPE 'S' DISPLAY LIKE 'E'.
       LEAVE LIST-PROCESSING.
     ENDIF.
 
     " 5.e Get CDHDR
-    SELECT objectclas
-           objectid
-           changenr
-           udate
-           utime
-           username
+    SELECT objectclas,
+           objectid,
+           changenr,
+           udate,
+           utime,
+           username,
            tcode
       INTO CORRESPONDING FIELDS OF TABLE @gt_cdhdr
       FROM cdhdr
@@ -285,19 +287,19 @@ CLASS lcl_model IMPLEMENTATION.
     SORT gt_cdhdr BY objectclas objectid changenr.
 
     IF gt_cdhdr IS INITIAL.
-      MESSAGE text-e05 TYPE 'S' DISPLAY LIKE 'E'.
+      MESSAGE TEXT-e05 TYPE 'S' DISPLAY LIKE 'E'.
       LEAVE LIST-PROCESSING.
     ENDIF.
 
     " 5.g Get CDPOS
-    SELECT tabname
-           fname
-           chngind
-           value_old
-           value_new
-           tabkey
-           objectclas
-           objectid
+    SELECT tabname,
+           fname,
+           chngind,
+           value_old,
+           value_new,
+           tabkey,
+           objectclas,
+           objectid,
            changenr
       INTO CORRESPONDING FIELDS OF TABLE @gt_cdpos
       FROM cdpos
@@ -309,12 +311,12 @@ CLASS lcl_model IMPLEMENTATION.
     SORT gt_cdpos BY objectclas objectid changenr tabname fname.
 
     IF gt_cdpos IS INITIAL.
-      MESSAGE text-e05 TYPE 'S' DISPLAY LIKE 'E'.
+      MESSAGE TEXT-e05 TYPE 'S' DISPLAY LIKE 'E'.
       LEAVE LIST-PROCESSING.
     ENDIF.
 
     " 5.h Get MAKT
-    SELECT matnr
+    SELECT matnr,
            maktx
       INTO CORRESPONDING FIELDS OF TABLE @gt_makt
       FROM makt
@@ -328,7 +330,7 @@ CLASS lcl_model IMPLEMENTATION.
     build_final_output( iv_hili = iv_hili ).
 
     IF gt_final IS INITIAL.
-      MESSAGE text-e05 TYPE 'S' DISPLAY LIKE 'E'.
+      MESSAGE TEXT-e05 TYPE 'S' DISPLAY LIKE 'E'.
       LEAVE LIST-PROCESSING.
     ENDIF.
   ENDMETHOD.
@@ -428,28 +430,28 @@ CLASS lcl_view IMPLEMENTATION.
   METHOD display_write.
     DATA ls_final TYPE ty_final.
 
-    WRITE: / text-h01.
-    WRITE: / text-h02.
+    WRITE: / TEXT-h01.
+    WRITE: / TEXT-h02.
     WRITE: / 'Executed by:', sy-uname.
     WRITE: / 'Executed on:', sy-datum, sy-uzeit.
     SKIP.
 
     FORMAT COLOR COL_HEADING INTENSIFIED ON.
-    WRITE: / text-c01,
-             20 text-c02,
-             35 text-c03,
-             50 text-c04,
-             68 text-c05,
-             85 text-c06,
-             105 text-c07,
-             130 text-c08,
-             165 text-c09.
-    WRITE: / text-c10,
-             40 text-c11,
-             60 text-c12,
-             80 text-c13,
-             100 text-c14,
-             115 text-c15.
+    WRITE: / TEXT-c01,
+             20 TEXT-c02,
+             35 TEXT-c03,
+             50 TEXT-c04,
+             68 TEXT-c05,
+             85 TEXT-c06,
+             105 TEXT-c07,
+             130 TEXT-c08,
+             165 TEXT-c09.
+    WRITE: / TEXT-c10,
+             40 TEXT-c11,
+             60 TEXT-c12,
+             80 TEXT-c13,
+             100 TEXT-c14,
+             115 TEXT-c15.
     FORMAT RESET.
 
     LOOP AT lcl_model=>gt_final INTO ls_final.
@@ -503,122 +505,122 @@ CLASS lcl_view IMPLEMENTATION.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'MATERIAL' ).
-            lo_column->set_short_text( text-c01 ).
-            lo_column->set_medium_text( text-c01 ).
-            lo_column->set_long_text( text-c01 ).
+            lo_column->set_short_text( TEXT-c01 ).
+            lo_column->set_medium_text( TEXT-c01 ).
+            lo_column->set_long_text( TEXT-c01 ).
             lo_column->set_cell_type( if_salv_c_cell_type=>hotspot ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'CHANGED_ON' ).
-            lo_column->set_short_text( text-c02 ).
-            lo_column->set_medium_text( text-c02 ).
-            lo_column->set_long_text( text-c02 ).
+            lo_column->set_short_text( TEXT-c02 ).
+            lo_column->set_medium_text( TEXT-c02 ).
+            lo_column->set_long_text( TEXT-c02 ).
           CATCH cx_salv_not_found.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'CHANGE_TIME' ).
-            lo_column->set_short_text( text-c03 ).
-            lo_column->set_medium_text( text-c03 ).
-            lo_column->set_long_text( text-c03 ).
+            lo_column->set_short_text( TEXT-c03 ).
+            lo_column->set_medium_text( TEXT-c03 ).
+            lo_column->set_long_text( TEXT-c03 ).
           CATCH cx_salv_not_found.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'CHANGED_BY' ).
-            lo_column->set_short_text( text-c04 ).
-            lo_column->set_medium_text( text-c04 ).
-            lo_column->set_long_text( text-c04 ).
+            lo_column->set_short_text( TEXT-c04 ).
+            lo_column->set_medium_text( TEXT-c04 ).
+            lo_column->set_long_text( TEXT-c04 ).
           CATCH cx_salv_not_found.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'TABNAME' ).
-            lo_column->set_short_text( text-c05 ).
-            lo_column->set_medium_text( text-c05 ).
-            lo_column->set_long_text( text-c05 ).
+            lo_column->set_short_text( TEXT-c05 ).
+            lo_column->set_medium_text( TEXT-c05 ).
+            lo_column->set_long_text( TEXT-c05 ).
           CATCH cx_salv_not_found.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'FNAME' ).
-            lo_column->set_short_text( text-c06 ).
-            lo_column->set_medium_text( text-c06 ).
-            lo_column->set_long_text( text-c06 ).
+            lo_column->set_short_text( TEXT-c06 ).
+            lo_column->set_medium_text( TEXT-c06 ).
+            lo_column->set_long_text( TEXT-c06 ).
           CATCH cx_salv_not_found.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'CHANGE_TYPE' ).
-            lo_column->set_short_text( text-c07 ).
-            lo_column->set_medium_text( text-c07 ).
-            lo_column->set_long_text( text-c07 ).
+            lo_column->set_short_text( TEXT-c07 ).
+            lo_column->set_medium_text( TEXT-c07 ).
+            lo_column->set_long_text( TEXT-c07 ).
           CATCH cx_salv_not_found.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'OLD_CONTENTS' ).
-            lo_column->set_short_text( text-c08 ).
-            lo_column->set_medium_text( text-c08 ).
-            lo_column->set_long_text( text-c08 ).
+            lo_column->set_short_text( TEXT-c08 ).
+            lo_column->set_medium_text( TEXT-c08 ).
+            lo_column->set_long_text( TEXT-c08 ).
           CATCH cx_salv_not_found.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'NEW_CONTENTS' ).
-            lo_column->set_short_text( text-c09 ).
-            lo_column->set_medium_text( text-c09 ).
-            lo_column->set_long_text( text-c09 ).
+            lo_column->set_short_text( TEXT-c09 ).
+            lo_column->set_medium_text( TEXT-c09 ).
+            lo_column->set_long_text( TEXT-c09 ).
           CATCH cx_salv_not_found.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'TABLE_KEY' ).
-            lo_column->set_short_text( text-c10 ).
-            lo_column->set_medium_text( text-c10 ).
-            lo_column->set_long_text( text-c10 ).
+            lo_column->set_short_text( TEXT-c10 ).
+            lo_column->set_medium_text( TEXT-c10 ).
+            lo_column->set_long_text( TEXT-c10 ).
           CATCH cx_salv_not_found.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'CHANGE_OBJECT' ).
-            lo_column->set_short_text( text-c11 ).
-            lo_column->set_medium_text( text-c11 ).
-            lo_column->set_long_text( text-c11 ).
+            lo_column->set_short_text( TEXT-c11 ).
+            lo_column->set_medium_text( TEXT-c11 ).
+            lo_column->set_long_text( TEXT-c11 ).
           CATCH cx_salv_not_found.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'OBJECT_VALUE' ).
-            lo_column->set_short_text( text-c12 ).
-            lo_column->set_medium_text( text-c12 ).
-            lo_column->set_long_text( text-c12 ).
+            lo_column->set_short_text( TEXT-c12 ).
+            lo_column->set_medium_text( TEXT-c12 ).
+            lo_column->set_long_text( TEXT-c12 ).
           CATCH cx_salv_not_found.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'CHANGE_NUMBER' ).
-            lo_column->set_short_text( text-c13 ).
-            lo_column->set_medium_text( text-c13 ).
-            lo_column->set_long_text( text-c13 ).
+            lo_column->set_short_text( TEXT-c13 ).
+            lo_column->set_medium_text( TEXT-c13 ).
+            lo_column->set_long_text( TEXT-c13 ).
           CATCH cx_salv_not_found.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'TCODE' ).
-            lo_column->set_short_text( text-c14 ).
-            lo_column->set_medium_text( text-c14 ).
-            lo_column->set_long_text( text-c14 ).
+            lo_column->set_short_text( TEXT-c14 ).
+            lo_column->set_medium_text( TEXT-c14 ).
+            lo_column->set_long_text( TEXT-c14 ).
           CATCH cx_salv_not_found.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'MAT_DESC' ).
-            lo_column->set_short_text( text-c15 ).
-            lo_column->set_medium_text( text-c15 ).
-            lo_column->set_long_text( text-c15 ).
+            lo_column->set_short_text( TEXT-c15 ).
+            lo_column->set_medium_text( TEXT-c15 ).
+            lo_column->set_long_text( TEXT-c15 ).
           CATCH cx_salv_not_found.
         ENDTRY.
 
@@ -633,7 +635,7 @@ CLASS lcl_view IMPLEMENTATION.
 
         lo_display = lo_alv->get_display_settings( ).
         lo_display->set_striped_pattern( abap_true ).
-        lo_display->set_list_header( text-h01 ).
+        lo_display->set_list_header( TEXT-h01 ).
 
         DATA lo_header TYPE REF TO cl_salv_form_layout_grid.
         CREATE OBJECT lo_header.
@@ -641,12 +643,12 @@ CLASS lcl_view IMPLEMENTATION.
         lo_header->create_label(
           row    = 1
           column = 1
-          text   = text-h01 ).
+          text   = TEXT-h01 ).
 
         lo_header->create_label(
           row    = 2
           column = 1
-          text   = text-h02 ).
+          text   = TEXT-h02 ).
 
         lo_header->create_label(
           row    = 3
