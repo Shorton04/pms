@@ -1,56 +1,692 @@
-*&———————————————————————*
-*& Report ZIN_CMX_WORKORDER
-*&———————————————————————*
-*& CMX Work Order Interface - Main Program
-*& Send Maintenance Orders to CMX System
-*&———————————————————————*
-REPORT zin_cmx_workorder.
+REPORT y<SAP_ID>_mmr_rsvrep.
 
-*–––––––––––––––––––––––––––––––––––*
+TABLES: resb, mara, rkpf, t001w, makt.
 
-- Include Programs
-  *–––––––––––––––––––––––––––––––––––*
-  INCLUDE zin_cmx_workorder_top.    “ Global Data Declarations
-  INCLUDE zin_cmx_workorder_sel.    “ Selection Screen
-  INCLUDE zin_cmx_workorder_f01.    “ Subroutines
+*---------------------------------------------------------------------*
+* TYPES
+*---------------------------------------------------------------------*
+TYPES: ty_t_rsnum TYPE RANGE OF resb-rsnum,
+       ty_t_matnr TYPE RANGE OF mara-matnr,
+       ty_t_werks TYPE RANGE OF resb-werks.
 
-*–––––––––––––––––––––––––––––––––––*
+TYPES: BEGIN OF ty_resb_base,
+         rsnum TYPE resb-rsnum,
+         werks TYPE resb-werks,
+         matnr TYPE resb-matnr,
+         rspos TYPE resb-rspos,
+         aufnr TYPE resb-aufnr,
+         bdart TYPE resb-bdart,
+         bwart TYPE resb-bwart,
+         saknr TYPE resb-saknr,
+         lgort TYPE resb-lgort,
+         charg TYPE resb-charg,
+         bdter TYPE resb-bdter,
+         bdmng TYPE resb-bdmng,
+         meins TYPE resb-meins,
+         shkzg TYPE resb-shkzg,
+         enmng TYPE resb-enmng,
+         enwrt TYPE resb-enwrt,
+         waers TYPE resb-waers,
+         erfmg TYPE resb-erfmg,
+         erfme TYPE resb-erfme,
+       END OF ty_resb_base.
 
-- Initialization
-  *–––––––––––––––––––––––––––––––––––*
-  INITIALIZATION.
-  PERFORM initialization.
+TYPES: BEGIN OF ty_makt,
+         matnr TYPE makt-matnr,
+         maktx TYPE makt-maktx,
+       END OF ty_makt.
 
-*–––––––––––––––––––––––––––––––––––*
+TYPES: BEGIN OF ty_t001w,
+         werks TYPE t001w-werks,
+         name1 TYPE t001w-name1,
+       END OF ty_t001w.
 
-- At Selection Screen Events
-  *–––––––––––––––––––––––––––––––––––*
-  AT SELECTION-SCREEN.
-  PERFORM validate_selection_screen.
+TYPES: BEGIN OF ty_final,
+         reservation      TYPE resb-rsnum,
+         plant            TYPE char50,
+         material         TYPE mara-matnr,
+         mat_description  TYPE makt-maktx,
+         item_no          TYPE resb-rspos,
+         order_no         TYPE resb-aufnr,
+         reqt_type        TYPE resb-bdart,
+         movement_type    TYPE resb-bwart,
+         gl_account       TYPE resb-saknr,
+         sloc             TYPE resb-lgort,
+         batch            TYPE resb-charg,
+         reqt_date        TYPE resb-bdter,
+         reqt_qty         TYPE resb-bdmng,
+         base_unit        TYPE resb-meins,
+         debit_credit     TYPE resb-shkzg,
+         withdraw_qty     TYPE resb-enmng,
+         withdr_value     TYPE resb-enwrt,
+         currency         TYPE resb-waers,
+         quantity_in_une  TYPE resb-erfmg,
+         unit_of_entry    TYPE resb-erfme,
+         cell_color       TYPE lvc_t_scol,
+       END OF ty_final.
 
-AT SELECTION-SCREEN OUTPUT.
-PERFORM modify_selection_screen.
+TYPES ty_t_final TYPE STANDARD TABLE OF ty_final WITH EMPTY KEY.
 
-*–––––––––––––––––––––––––––––––––––*
+*---------------------------------------------------------------------*
+* SELECTION SCREEN
+*---------------------------------------------------------------------*
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-t01.
+  SELECT-OPTIONS:
+    s_rsnum FOR resb-rsnum,
+    s_matnr FOR mara-matnr.
+  PARAMETERS:
+    p_werks TYPE resb-werks.
+SELECTION-SCREEN END OF BLOCK b1.
 
-- Start of Selection
-  *–––––––––––––––––––––––––––––––––––*
-  START-OF-SELECTION.
-  “ Record execution time
-  gv_execution_time = sy-uzeit.
-  
-  “ Execute main processing
-  PERFORM main_processing.
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-t02.
+  PARAMETERS:
+    p_write RADIOBUTTON GROUP r1,
+    p_alv   RADIOBUTTON GROUP r1 DEFAULT 'X',
+    p_hsp   AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN END OF BLOCK b2.
 
-*–––––––––––––––––––––––––––––––––––*
+*---------------------------------------------------------------------*
+* CLASS DECLARATIONS
+*---------------------------------------------------------------------*
+CLASS lcl_validator DEFINITION FINAL.
+  PUBLIC SECTION.
+    CLASS-METHODS:
+      validate_reservation_input
+        IMPORTING
+          it_rsnum TYPE ty_t_rsnum,
 
-- End of Selection
-  *–––––––––––––––––––––––––––––––––––*
-  END-OF-SELECTION.
-  “ Display results
-  PERFORM display_results.
-  
-  “ Log execution if not test mode
-  IF p_test IS INITIAL.
-  PERFORM log_execution.
+      validate_material_input
+        IMPORTING
+          it_matnr TYPE ty_t_matnr,
+
+      validate_plant_input
+        IMPORTING
+          iv_werks TYPE resb-werks.
+ENDCLASS.
+
+CLASS lcl_model DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS:
+      get_data
+        IMPORTING
+          it_rsnum TYPE ty_t_rsnum
+          it_matnr TYPE ty_t_matnr
+          iv_werks TYPE resb-werks
+        RETURNING
+          VALUE(rt_final) TYPE ty_t_final.
+ENDCLASS.
+
+CLASS lcl_events DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS:
+      on_link_click
+        FOR EVENT link_click OF cl_salv_events_table
+        IMPORTING row column.
+    METHODS:
+      set_data
+        IMPORTING
+          it_final TYPE ty_t_final.
+  PRIVATE SECTION.
+    DATA mt_final TYPE ty_t_final.
+ENDCLASS.
+
+CLASS lcl_view DEFINITION FINAL.
+  PUBLIC SECTION.
+    METHODS:
+      constructor
+        IMPORTING
+          it_final TYPE ty_t_final,
+
+      display_write,
+
+      display_alv
+        IMPORTING
+          iv_hotspot TYPE abap_bool.
+  PRIVATE SECTION.
+    DATA mt_final TYPE ty_t_final.
+ENDCLASS.
+
+*---------------------------------------------------------------------*
+* DATA
+*---------------------------------------------------------------------*
+DATA: gt_final TYPE ty_t_final.
+
+*---------------------------------------------------------------------*
+* VALIDATION CLASS
+*---------------------------------------------------------------------*
+CLASS lcl_validator IMPLEMENTATION.
+
+  METHOD validate_reservation_input.
+    DATA ls_rsnum LIKE LINE OF it_rsnum.
+
+    LOOP AT it_rsnum INTO ls_rsnum
+      WHERE sign = 'I'
+        AND option = 'EQ'
+        AND low IS NOT INITIAL.
+
+      SELECT SINGLE rsnum
+        FROM rkpf
+        INTO @DATA(lv_rsnum)
+        WHERE rsnum = @ls_rsnum-low.
+
+      IF sy-subrc <> 0.
+        MESSAGE text-e01 TYPE 'E'.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD validate_material_input.
+    DATA ls_matnr LIKE LINE OF it_matnr.
+
+    LOOP AT it_matnr INTO ls_matnr
+      WHERE sign = 'I'
+        AND option = 'EQ'
+        AND low IS NOT INITIAL.
+
+      SELECT SINGLE matnr
+        FROM mara
+        INTO @DATA(lv_matnr)
+        WHERE matnr = @ls_matnr-low.
+
+      IF sy-subrc <> 0.
+        MESSAGE text-e02 TYPE 'E'.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD validate_plant_input.
+    IF iv_werks IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    SELECT SINGLE werks
+      FROM t001w
+      INTO @DATA(lv_werks)
+      WHERE werks = @iv_werks.
+
+    IF sy-subrc <> 0.
+      MESSAGE text-e03 TYPE 'E'.
+    ENDIF.
+  ENDMETHOD.
+
+ENDCLASS.
+
+*---------------------------------------------------------------------*
+* MODEL CLASS
+*---------------------------------------------------------------------*
+CLASS lcl_model IMPLEMENTATION.
+
+  METHOD get_data.
+    DATA: lt_base  TYPE STANDARD TABLE OF ty_resb_base WITH EMPTY KEY,
+          lt_makt  TYPE SORTED TABLE OF ty_makt  WITH UNIQUE KEY matnr,
+          lt_t001w TYPE SORTED TABLE OF ty_t001w WITH UNIQUE KEY werks,
+          lt_werks TYPE ty_t_werks,
+          ls_final TYPE ty_final.
+
+    IF iv_werks IS NOT INITIAL.
+      lt_werks = VALUE #(
+        ( sign = 'I'
+          option = 'EQ'
+          low = iv_werks ) ).
+    ENDIF.
+
+    IF lt_werks IS INITIAL.
+      SELECT
+        a~rsnum,
+        a~werks,
+        a~matnr,
+        a~rspos,
+        a~aufnr,
+        a~bdart,
+        a~bwart,
+        a~saknr,
+        a~lgort,
+        a~charg,
+        a~bdter,
+        a~bdmng,
+        a~meins,
+        a~shkzg,
+        a~enmng,
+        a~enwrt,
+        a~waers,
+        a~erfmg,
+        a~erfme
+        FROM resb AS a
+        INNER JOIN mara AS b
+          ON b~matnr = a~matnr
+        WHERE a~rsnum IN @it_rsnum
+          AND a~matnr IN @it_matnr
+        INTO TABLE @lt_base.
+    ELSE.
+      SELECT
+        a~rsnum,
+        a~werks,
+        a~matnr,
+        a~rspos,
+        a~aufnr,
+        a~bdart,
+        a~bwart,
+        a~saknr,
+        a~lgort,
+        a~charg,
+        a~bdter,
+        a~bdmng,
+        a~meins,
+        a~shkzg,
+        a~enmng,
+        a~enwrt,
+        a~waers,
+        a~erfmg,
+        a~erfme
+        FROM resb AS a
+        INNER JOIN mara AS b
+          ON b~matnr = a~matnr
+        WHERE a~rsnum IN @it_rsnum
+          AND a~matnr IN @it_matnr
+          AND a~werks IN @lt_werks
+        INTO TABLE @lt_base.
+    ENDIF.
+
+    IF lt_base IS INITIAL.
+      MESSAGE text-e04 TYPE 'S' DISPLAY LIKE 'E'.
+      LEAVE LIST-PROCESSING.
+    ENDIF.
+
+    SORT lt_base BY rsnum werks matnr rspos.
+
+    SELECT matnr, maktx
+      FROM makt
+      FOR ALL ENTRIES IN @lt_base
+      WHERE matnr = @lt_base-matnr
+        AND spras = @sy-langu
+      INTO TABLE @DATA(lt_makt_raw).
+
+    IF sy-subrc = 0.
+      lt_makt = CORRESPONDING #( lt_makt_raw ).
+    ENDIF.
+
+    SELECT werks, name1
+      FROM t001w
+      FOR ALL ENTRIES IN @lt_base
+      WHERE werks = @lt_base-werks
+      INTO TABLE @DATA(lt_t001w_raw).
+
+    IF sy-subrc = 0.
+      lt_t001w = CORRESPONDING #( lt_t001w_raw ).
+    ENDIF.
+
+    LOOP AT lt_base INTO DATA(ls_base).
+      CLEAR ls_final.
+
+      ls_final-reservation     = ls_base-rsnum.
+      ls_final-material        = ls_base-matnr.
+      ls_final-item_no         = ls_base-rspos.
+      ls_final-order_no        = ls_base-aufnr.
+      ls_final-reqt_type       = ls_base-bdart.
+      ls_final-movement_type   = ls_base-bwart.
+      ls_final-gl_account      = ls_base-saknr.
+      ls_final-sloc            = ls_base-lgort.
+      ls_final-batch           = ls_base-charg.
+      ls_final-reqt_date       = ls_base-bdter.
+      ls_final-reqt_qty        = ls_base-bdmng.
+      ls_final-base_unit       = ls_base-meins.
+      ls_final-debit_credit    = ls_base-shkzg.
+      ls_final-withdraw_qty    = ls_base-enmng.
+      ls_final-withdr_value    = ls_base-enwrt.
+      ls_final-currency        = ls_base-waers.
+      ls_final-quantity_in_une = ls_base-erfmg.
+      ls_final-unit_of_entry   = ls_base-erfme.
+
+      READ TABLE lt_t001w INTO DATA(ls_t001w)
+        WITH KEY werks = ls_base-werks
+        BINARY SEARCH.
+      IF sy-subrc = 0.
+        ls_final-plant = |{ ls_base-werks } - { ls_t001w-name1 }|.
+      ELSE.
+        ls_final-plant = ls_base-werks.
+      ENDIF.
+
+      READ TABLE lt_makt INTO DATA(ls_makt)
+        WITH KEY matnr = ls_base-matnr
+        BINARY SEARCH.
+      IF sy-subrc = 0.
+        ls_final-mat_description = ls_makt-maktx.
+      ENDIF.
+
+      IF ls_final-reqt_qty = 0.
+        ls_final-cell_color = VALUE #(
+          ( fname = 'REQT_QTY'
+            color-col = col_negative
+            color-int = 0
+            color-inv = 0 ) ).
+      ENDIF.
+
+      APPEND ls_final TO rt_final.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+ENDCLASS.
+
+*---------------------------------------------------------------------*
+* EVENT HANDLER CLASS
+*---------------------------------------------------------------------*
+CLASS lcl_events IMPLEMENTATION.
+
+  METHOD set_data.
+    mt_final = it_final.
+  ENDMETHOD.
+
+  METHOD on_link_click.
+    READ TABLE mt_final INTO DATA(ls_final) INDEX row.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+
+    IF column = 'MATERIAL' AND ls_final-material IS NOT INITIAL.
+      SET PARAMETER ID 'MAT' FIELD ls_final-material.
+      CALL TRANSACTION 'MM03' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+    ENDIF.
+  ENDMETHOD.
+
+ENDCLASS.
+
+*---------------------------------------------------------------------*
+* VIEW CLASS
+*---------------------------------------------------------------------*
+CLASS lcl_view IMPLEMENTATION.
+
+  METHOD constructor.
+    mt_final = it_final.
+  ENDMETHOD.
+
+  METHOD display_write.
+    DATA ls_final TYPE ty_final.
+
+    WRITE: / text-h01.
+    WRITE: / text-h02.
+    WRITE: / text-h03, sy-uname.
+    WRITE: / text-h04, sy-datum, sy-uzeit.
+    SKIP 2.
+
+    FORMAT COLOR COL_HEADING INTENSIFIED ON.
+    WRITE: / text-c01 UNDER 'Reservation',
+             text-c02 UNDER 'Plant',
+             text-c03 UNDER 'Material',
+             text-c04 UNDER 'Mat. Description',
+             text-c05 UNDER 'Item no.',
+             text-c06 UNDER 'Order',
+             text-c07 UNDER 'Reqt. Type',
+             text-c08 UNDER 'Movement Type',
+             text-c09 UNDER 'G/L Account',
+             text-c10 UNDER 'SLoc',
+             text-c11 UNDER 'Batch',
+             text-c12 UNDER 'Reqt Date',
+             text-c13 UNDER 'Reqt Qty',
+             text-c14 UNDER 'Base Unit',
+             text-c15 UNDER 'Debit/Credit',
+             text-c16 UNDER 'Withdrawal Qty',
+             text-c17 UNDER 'Withdr. Value',
+             text-c18 UNDER 'Currency',
+             text-c19 UNDER 'Quantity in UnE',
+             text-c20 UNDER 'Unit of Entry'.
+    FORMAT RESET.
+
+    ULINE.
+
+    LOOP AT mt_final INTO ls_final.
+      WRITE: / ls_final-reservation,
+               ls_final-plant,
+               ls_final-material,
+               ls_final-mat_description,
+               ls_final-item_no,
+               ls_final-order_no,
+               ls_final-reqt_type,
+               ls_final-movement_type,
+               ls_final-gl_account,
+               ls_final-sloc,
+               ls_final-batch,
+               ls_final-reqt_date,
+               ls_final-reqt_qty,
+               ls_final-base_unit,
+               ls_final-debit_credit,
+               ls_final-withdraw_qty,
+               ls_final-withdr_value,
+               ls_final-currency,
+               ls_final-quantity_in_une,
+               ls_final-unit_of_entry.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD display_alv.
+    DATA: lo_alv        TYPE REF TO cl_salv_table,
+          lo_columns    TYPE REF TO cl_salv_columns_table,
+          lo_column     TYPE REF TO cl_salv_column_table,
+          lo_sorts      TYPE REF TO cl_salv_sorts,
+          lo_sort       TYPE REF TO cl_salv_sort,
+          lo_functions  TYPE REF TO cl_salv_functions_list,
+          lo_display    TYPE REF TO cl_salv_display_settings,
+          lo_events     TYPE REF TO cl_salv_events_table,
+          lo_handler    TYPE REF TO lcl_events,
+          lo_aggreg     TYPE REF TO cl_salv_aggregations,
+          lo_layout     TYPE REF TO cl_salv_form_layout_grid,
+          lo_header     TYPE REF TO cl_salv_form_header_info,
+          lo_label      TYPE REF TO cl_salv_form_label,
+          lo_flow       TYPE REF TO cl_salv_form_layout_flow.
+
+    TRY.
+        cl_salv_table=>factory(
+          IMPORTING
+            r_salv_table = lo_alv
+          CHANGING
+            t_table      = mt_final ).
+
+        lo_columns = lo_alv->get_columns( ).
+        lo_columns->set_optimize( abap_true ).
+        lo_columns->set_color_column( 'CELL_COLOR' ).
+
+        lo_column ?= lo_columns->get_column( 'RESERVATION' ).
+        lo_column->set_short_text(  text-c01 ).
+        lo_column->set_medium_text( text-c01 ).
+        lo_column->set_long_text(   text-c01 ).
+
+        lo_column ?= lo_columns->get_column( 'PLANT' ).
+        lo_column->set_short_text(  text-c02 ).
+        lo_column->set_medium_text( text-c02 ).
+        lo_column->set_long_text(   text-c02 ).
+
+        lo_column ?= lo_columns->get_column( 'MATERIAL' ).
+        lo_column->set_short_text(  text-c03 ).
+        lo_column->set_medium_text( text-c03 ).
+        lo_column->set_long_text(   text-c03 ).
+        IF iv_hotspot = abap_true.
+          lo_column->set_cell_type( if_salv_c_cell_type=>hotspot ).
+        ENDIF.
+
+        lo_column ?= lo_columns->get_column( 'MAT_DESCRIPTION' ).
+        lo_column->set_short_text(  text-c04 ).
+        lo_column->set_medium_text( text-c04 ).
+        lo_column->set_long_text(   text-c04 ).
+
+        lo_column ?= lo_columns->get_column( 'ITEM_NO' ).
+        lo_column->set_short_text(  text-c05 ).
+        lo_column->set_medium_text( text-c05 ).
+        lo_column->set_long_text(   text-c05 ).
+
+        lo_column ?= lo_columns->get_column( 'ORDER_NO' ).
+        lo_column->set_short_text(  text-c06 ).
+        lo_column->set_medium_text( text-c06 ).
+        lo_column->set_long_text(   text-c06 ).
+
+        lo_column ?= lo_columns->get_column( 'REQT_TYPE' ).
+        lo_column->set_short_text(  text-c07 ).
+        lo_column->set_medium_text( text-c07 ).
+        lo_column->set_long_text(   text-c07 ).
+
+        lo_column ?= lo_columns->get_column( 'MOVEMENT_TYPE' ).
+        lo_column->set_short_text(  text-c08 ).
+        lo_column->set_medium_text( text-c08 ).
+        lo_column->set_long_text(   text-c08 ).
+
+        lo_column ?= lo_columns->get_column( 'GL_ACCOUNT' ).
+        lo_column->set_short_text(  text-c09 ).
+        lo_column->set_medium_text( text-c09 ).
+        lo_column->set_long_text(   text-c09 ).
+
+        lo_column ?= lo_columns->get_column( 'SLOC' ).
+        lo_column->set_short_text(  text-c10 ).
+        lo_column->set_medium_text( text-c10 ).
+        lo_column->set_long_text(   text-c10 ).
+
+        lo_column ?= lo_columns->get_column( 'BATCH' ).
+        lo_column->set_short_text(  text-c11 ).
+        lo_column->set_medium_text( text-c11 ).
+        lo_column->set_long_text(   text-c11 ).
+
+        lo_column ?= lo_columns->get_column( 'REQT_DATE' ).
+        lo_column->set_short_text(  text-c12 ).
+        lo_column->set_medium_text( text-c12 ).
+        lo_column->set_long_text(   text-c12 ).
+
+        lo_column ?= lo_columns->get_column( 'REQT_QTY' ).
+        lo_column->set_short_text(  text-c13 ).
+        lo_column->set_medium_text( text-c13 ).
+        lo_column->set_long_text(   text-c13 ).
+
+        lo_column ?= lo_columns->get_column( 'BASE_UNIT' ).
+        lo_column->set_short_text(  text-c14 ).
+        lo_column->set_medium_text( text-c14 ).
+        lo_column->set_long_text(   text-c14 ).
+
+        lo_column ?= lo_columns->get_column( 'DEBIT_CREDIT' ).
+        lo_column->set_short_text(  text-c15 ).
+        lo_column->set_medium_text( text-c15 ).
+        lo_column->set_long_text(   text-c15 ).
+
+        lo_column ?= lo_columns->get_column( 'WITHDRAW_QTY' ).
+        lo_column->set_short_text(  text-c16 ).
+        lo_column->set_medium_text( text-c16 ).
+        lo_column->set_long_text(   text-c16 ).
+
+        lo_column ?= lo_columns->get_column( 'WITHDR_VALUE' ).
+        lo_column->set_short_text(  text-c17 ).
+        lo_column->set_medium_text( text-c17 ).
+        lo_column->set_long_text(   text-c17 ).
+
+        lo_column ?= lo_columns->get_column( 'CURRENCY' ).
+        lo_column->set_short_text(  text-c18 ).
+        lo_column->set_medium_text( text-c18 ).
+        lo_column->set_long_text(   text-c18 ).
+
+        lo_column ?= lo_columns->get_column( 'QUANTITY_IN_UNE' ).
+        lo_column->set_short_text(  text-c19 ).
+        lo_column->set_medium_text( text-c19 ).
+        lo_column->set_long_text(   text-c19 ).
+
+        lo_column ?= lo_columns->get_column( 'UNIT_OF_ENTRY' ).
+        lo_column->set_short_text(  text-c20 ).
+        lo_column->set_medium_text( text-c20 ).
+        lo_column->set_long_text(   text-c20 ).
+
+        lo_functions = lo_alv->get_functions( ).
+        lo_functions->set_all( abap_true ).
+
+        lo_display = lo_alv->get_display_settings( ).
+        lo_display->set_list_header( text-h01 ).
+        lo_display->set_striped_pattern( abap_true ).
+
+        lo_layout = NEW cl_salv_form_layout_grid( ).
+        lo_header = lo_layout->create_header_information(
+          row     = 1
+          column  = 1
+          text    = text-h01
+          tooltip = text-h01 ).
+
+        lo_flow = lo_layout->create_flow(
+          row    = 2
+          column = 1 ).
+        lo_flow->create_text( text = text-h02 ).
+
+        lo_label = lo_layout->create_label(
+          row    = 3
+          column = 1
+          text   = text-h03 ).
+        lo_flow = lo_layout->create_flow(
+          row    = 3
+          column = 2 ).
+        lo_flow->create_text( text = sy-uname ).
+
+        lo_label = lo_layout->create_label(
+          row    = 4
+          column = 1
+          text   = text-h04 ).
+        lo_flow = lo_layout->create_flow(
+          row    = 4
+          column = 2 ).
+        lo_flow->create_text(
+          text = |{ sy-datum DATE = USER } - { sy-uzeit TIME = USER }| ).
+
+        lo_alv->set_top_of_list( lo_layout ).
+
+        lo_sorts = lo_alv->get_sorts( ).
+        lo_sorts->add_sort(
+          columnname = 'RESERVATION'
+          sequence   = if_salv_c_sort=>sort_up ).
+        lo_sorts->add_sort(
+          columnname = 'PLANT'
+          sequence   = if_salv_c_sort=>sort_up
+          subtotal   = abap_true ).
+        lo_sorts->add_sort(
+          columnname = 'MATERIAL'
+          sequence   = if_salv_c_sort=>sort_up ).
+        lo_sorts->add_sort(
+          columnname = 'ITEM_NO'
+          sequence   = if_salv_c_sort=>sort_up ).
+
+        lo_aggreg = lo_alv->get_aggregations( ).
+        lo_aggreg->add_aggregation( 'REQT_QTY' ).
+
+        IF iv_hotspot = abap_true.
+          CREATE OBJECT lo_handler.
+          lo_handler->set_data( mt_final ).
+          lo_events = lo_alv->get_event( ).
+          SET HANDLER lo_handler->on_link_click FOR lo_events.
+        ENDIF.
+
+        lo_alv->display( ).
+
+      CATCH cx_salv_msg INTO DATA(lx_salv).
+        MESSAGE lx_salv->get_text( ) TYPE 'I'.
+    ENDTRY.
+  ENDMETHOD.
+
+ENDCLASS.
+
+*---------------------------------------------------------------------*
+* SELECTION-SCREEN EVENTS
+*---------------------------------------------------------------------*
+AT SELECTION-SCREEN.
+  lcl_validator=>validate_reservation_input( s_rsnum[] ).
+  lcl_validator=>validate_material_input( s_matnr[] ).
+  lcl_validator=>validate_plant_input( p_werks ).
+
+*---------------------------------------------------------------------*
+* START-OF-SELECTION
+*---------------------------------------------------------------------*
+START-OF-SELECTION.
+  DATA(lo_model) = NEW lcl_model( ).
+  gt_final = lo_model->get_data(
+    it_rsnum = s_rsnum[]
+    it_matnr = s_matnr[]
+    iv_werks = p_werks ).
+
+  DATA(lo_view) = NEW lcl_view( gt_final ).
+
+  IF p_write = abap_true.
+    lo_view->display_write( ).
+  ELSE.
+    lo_view->display_alv(
+      iv_hotspot = COND abap_bool(
+                     WHEN p_hsp = abap_true THEN abap_true
+                     ELSE abap_false ) ).
   ENDIF.
