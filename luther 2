@@ -1,0 +1,722 @@
+REPORT y<SAP_ID>_mmr_matrep.
+
+TABLES: mara,
+        cdhdr.
+
+TYPE-POOLS: slis.
+
+************************************************************************
+* Text Elements
+************************************************************************
+* TEXT-T01 = Criteria
+* TEXT-T02 = Select a View
+* TEXT-E01 = Invalid Material
+* TEXT-E02 = Enter a change date
+* TEXT-E03 = Date specified is in the future, enter a valid date
+* TEXT-E04 = Invalid Material Type
+* TEXT-E05 = No data found.
+* TEXT-H01 = Material Master Report
+* TEXT-H02 = Material Audit View
+* TEXT-C01 = Material
+* TEXT-C02 = Changed On
+* TEXT-C03 = Change Time
+* TEXT-C04 = Changed By
+* TEXT-C05 = Table
+* TEXT-C06 = Field
+* TEXT-C07 = Change Type
+* TEXT-C08 = Old Contents
+* TEXT-C09 = New Contents
+* TEXT-C10 = Table Key
+* TEXT-C11 = Change Object
+* TEXT-C12 = Object Value
+* TEXT-C13 = Change Number
+* TEXT-C14 = Transaction
+* TEXT-C15 = Mat Description
+
+************************************************************************
+* Selection Screen
+************************************************************************
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-t01.
+  SELECT-OPTIONS:
+    s_matnr FOR mara-matnr,
+    s_udate FOR cdhdr-udate.
+
+  PARAMETERS:
+    p_mtart TYPE mara-mtart.
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-t02.
+  PARAMETERS:
+    p_write RADIOBUTTON GROUP rg1,
+    p_alv   RADIOBUTTON GROUP rg1 DEFAULT 'X',
+    p_hili  AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN END OF BLOCK b2.
+
+************************************************************************
+* Types
+************************************************************************
+TYPES: BEGIN OF ty_objid,
+         objectid TYPE cdhdr-objectid,
+       END OF ty_objid.
+
+TYPES: BEGIN OF ty_final,
+         material      TYPE mara-matnr,
+         changed_on    TYPE cdhdr-udate,
+         change_time   TYPE cdhdr-utime,
+         changed_by    TYPE cdhdr-username,
+         tabname       TYPE cdpos-tabname,
+         fname         TYPE cdpos-fname,
+         change_type   TYPE char20,
+         old_contents  TYPE cdpos-value_old,
+         new_contents  TYPE cdpos-value_new,
+         table_key     TYPE cdpos-tabkey,
+         change_object TYPE cdpos-objectclas,
+         object_value  TYPE cdpos-objectid,
+         change_number TYPE cdpos-changenr,
+         tcode         TYPE cdhdr-tcode,
+         mat_desc      TYPE makt-maktx,
+         cell_color    TYPE lvc_t_scol,
+       END OF ty_final.
+
+TYPES: tt_final TYPE STANDARD TABLE OF ty_final WITH DEFAULT KEY.
+
+************************************************************************
+* Model Class
+************************************************************************
+CLASS lcl_model DEFINITION.
+  PUBLIC SECTION.
+    CLASS-DATA:
+      gt_mara  TYPE STANDARD TABLE OF mara     WITH DEFAULT KEY,
+      gt_cdhdr TYPE STANDARD TABLE OF cdhdr    WITH DEFAULT KEY,
+      gt_cdpos TYPE STANDARD TABLE OF cdpos    WITH DEFAULT KEY,
+      gt_makt  TYPE STANDARD TABLE OF makt     WITH DEFAULT KEY,
+      gt_objid TYPE STANDARD TABLE OF ty_objid WITH DEFAULT KEY,
+      gt_final TYPE tt_final.
+
+    CLASS-METHODS:
+      validate_material_input
+        IMPORTING
+          it_matnr TYPE RANGE OF mara-matnr,
+
+      validate_change_date_input
+        IMPORTING
+          it_udate TYPE RANGE OF cdhdr-udate,
+
+      validate_material_type_input
+        IMPORTING
+          iv_mtart TYPE mara-mtart.
+
+    METHODS:
+      get_data
+        IMPORTING
+          it_matnr TYPE RANGE OF mara-matnr
+          it_udate TYPE RANGE OF cdhdr-udate
+          iv_mtart TYPE mara-mtart
+          iv_hili  TYPE abap_bool.
+
+  PRIVATE SECTION.
+    METHODS:
+      build_final_output
+        IMPORTING
+          iv_hili TYPE abap_bool.
+ENDCLASS.
+
+CLASS lcl_model IMPLEMENTATION.
+
+  METHOD validate_material_input.
+    DATA lv_matnr TYPE mara-matnr.
+
+    LOOP AT it_matnr ASSIGNING FIELD-SYMBOL(<fs_matnr>).
+
+      IF <fs_matnr>-low IS NOT INITIAL.
+        SELECT SINGLE matnr
+          INTO @lv_matnr
+          FROM mara
+          WHERE matnr = @<fs_matnr>-low.
+        IF sy-subrc <> 0.
+          MESSAGE text-e01 TYPE 'E'.
+        ENDIF.
+      ENDIF.
+
+      IF <fs_matnr>-high IS NOT INITIAL.
+        SELECT SINGLE matnr
+          INTO @lv_matnr
+          FROM mara
+          WHERE matnr = @<fs_matnr>-high.
+        IF sy-subrc <> 0.
+          MESSAGE text-e01 TYPE 'E'.
+        ENDIF.
+      ENDIF.
+
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD validate_change_date_input.
+    DATA ls_udate LIKE LINE OF it_udate.
+
+    READ TABLE it_udate INTO ls_udate INDEX 1.
+    IF sy-subrc <> 0 OR ls_udate-low IS INITIAL.
+      MESSAGE text-e02 TYPE 'E'.
+    ENDIF.
+
+    LOOP AT it_udate INTO ls_udate.
+      IF ls_udate-low IS NOT INITIAL AND ls_udate-low > sy-datum.
+        MESSAGE text-e03 TYPE 'E'.
+      ENDIF.
+
+      IF ls_udate-high IS NOT INITIAL AND ls_udate-high > sy-datum.
+        MESSAGE text-e03 TYPE 'E'.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD validate_material_type_input.
+    DATA lv_mtart TYPE t134-mtart.
+
+    IF iv_mtart IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    SELECT SINGLE mtart
+      INTO @lv_mtart
+      FROM t134
+      WHERE mtart = @iv_mtart.
+
+    IF sy-subrc <> 0.
+      MESSAGE text-e04 TYPE 'E'.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD get_data.
+    DATA lt_mtart_rng TYPE RANGE OF mara-mtart.
+
+    CLEAR: gt_mara, gt_cdhdr, gt_cdpos, gt_makt, gt_objid, gt_final.
+
+    IF iv_mtart IS NOT INITIAL.
+      lt_mtart_rng = VALUE #(
+        ( sign = 'I' option = 'EQ' low = iv_mtart )
+      ).
+    ENDIF.
+
+    " Get Material from MARA
+    IF iv_mtart IS INITIAL.
+      SELECT *
+        INTO TABLE @gt_mara
+        FROM mara
+        WHERE matnr IN @it_matnr.
+    ELSE.
+      SELECT *
+        INTO TABLE @gt_mara
+        FROM mara
+        WHERE matnr IN @it_matnr
+          AND mtart IN @lt_mtart_rng.
+    ENDIF.
+
+    SORT gt_mara BY matnr.
+    DELETE ADJACENT DUPLICATES FROM gt_mara COMPARING matnr.
+
+    IF gt_mara IS INITIAL.
+      MESSAGE text-e05 TYPE 'S' DISPLAY LIKE 'E'.
+      LEAVE LIST-PROCESSING.
+    ENDIF.
+
+    " Prepare object ids
+    LOOP AT gt_mara INTO DATA(ls_mara).
+      APPEND VALUE ty_objid( objectid = ls_mara-matnr ) TO gt_objid.
+    ENDLOOP.
+
+    SORT gt_objid BY objectid.
+    DELETE ADJACENT DUPLICATES FROM gt_objid COMPARING objectid.
+
+    " Get CDHDR
+    SELECT objectclas
+           objectid
+           changenr
+           udate
+           utime
+           username
+           tcode
+      INTO TABLE gt_cdhdr
+      FROM cdhdr
+      FOR ALL ENTRIES IN gt_objid
+      WHERE objectclas = 'MATERIAL'
+        AND objectid   = gt_objid-objectid
+        AND udate      IN it_udate.
+
+    SORT gt_cdhdr BY objectclas objectid changenr.
+
+    IF gt_cdhdr IS INITIAL.
+      MESSAGE text-e05 TYPE 'S' DISPLAY LIKE 'E'.
+      LEAVE LIST-PROCESSING.
+    ENDIF.
+
+    " Get CDPOS
+    SELECT objectclas
+           objectid
+           changenr
+           tabname
+           fname
+           chngind
+           value_old
+           value_new
+           tabkey
+      INTO TABLE gt_cdpos
+      FROM cdpos
+      FOR ALL ENTRIES IN gt_cdhdr
+      WHERE objectclas = 'MATERIAL'
+        AND objectid   = gt_cdhdr-objectid
+        AND changenr   = gt_cdhdr-changenr.
+
+    SORT gt_cdpos BY objectclas objectid changenr tabname fname.
+
+    IF gt_cdpos IS INITIAL.
+      MESSAGE text-e05 TYPE 'S' DISPLAY LIKE 'E'.
+      LEAVE LIST-PROCESSING.
+    ENDIF.
+
+    " Get MAKT
+    SELECT matnr
+           spras
+           maktx
+      INTO TABLE gt_makt
+      FROM makt
+      FOR ALL ENTRIES IN gt_mara
+      WHERE matnr = gt_mara-matnr
+        AND spras = sy-langu.
+
+    SORT gt_makt BY matnr.
+
+    build_final_output( iv_hili = iv_hili ).
+
+    IF gt_final IS INITIAL.
+      MESSAGE text-e05 TYPE 'S' DISPLAY LIKE 'E'.
+      LEAVE LIST-PROCESSING.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD build_final_output.
+    DATA: ls_final TYPE ty_final,
+          ls_cdhdr TYPE cdhdr,
+          ls_makt  TYPE makt,
+          ls_scol  TYPE lvc_s_scol,
+          lv_text  TYPE char20.
+
+    LOOP AT gt_cdpos INTO DATA(ls_cdpos).
+      CLEAR: ls_final, ls_cdhdr, ls_makt, lv_text.
+
+      READ TABLE gt_cdhdr INTO ls_cdhdr
+        WITH KEY objectclas = ls_cdpos-objectclas
+                 objectid   = ls_cdpos-objectid
+                 changenr   = ls_cdpos-changenr
+        BINARY SEARCH.
+      IF sy-subrc <> 0.
+        CONTINUE.
+      ENDIF.
+
+      READ TABLE gt_makt INTO ls_makt
+        WITH KEY matnr = ls_cdpos-objectid
+        BINARY SEARCH.
+
+      CASE ls_cdpos-chngind.
+        WHEN 'U'.
+          lv_text = 'U - Update'.
+        WHEN 'I'.
+          lv_text = 'I - Insert'.
+        WHEN 'D'.
+          lv_text = 'D - Delete'.
+        WHEN OTHERS.
+          lv_text = ls_cdpos-chngind.
+      ENDCASE.
+
+      ls_final-material      = ls_cdpos-objectid.
+      ls_final-changed_on    = ls_cdhdr-udate.
+      ls_final-change_time   = ls_cdhdr-utime.
+      ls_final-changed_by    = ls_cdhdr-username.
+      ls_final-tabname       = ls_cdpos-tabname.
+      ls_final-fname         = ls_cdpos-fname.
+      ls_final-change_type   = lv_text.
+      ls_final-old_contents  = ls_cdpos-value_old.
+      ls_final-new_contents  = ls_cdpos-value_new.
+      ls_final-table_key     = ls_cdpos-tabkey.
+      ls_final-change_object = ls_cdpos-objectclas.
+      ls_final-object_value  = ls_cdpos-objectid.
+      ls_final-change_number = ls_cdpos-changenr.
+      ls_final-tcode         = ls_cdhdr-tcode.
+      ls_final-mat_desc      = ls_makt-maktx.
+
+      IF iv_hili = abap_true.
+        CLEAR ls_scol.
+        ls_scol-fname = 'MATERIAL'.
+        ls_scol-color-col = 6.
+        ls_scol-color-int = 1.
+        ls_scol-color-inv = 0.
+        APPEND ls_scol TO ls_final-cell_color.
+      ENDIF.
+
+      APPEND ls_final TO gt_final.
+    ENDLOOP.
+
+    SORT gt_final BY material ASCENDING
+                     changed_on DESCENDING
+                     change_time ASCENDING
+                     changed_by ASCENDING.
+  ENDMETHOD.
+
+ENDCLASS.
+
+************************************************************************
+* Event Handler for Hotspot
+************************************************************************
+CLASS lcl_event_handler DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      on_link_click
+        FOR EVENT link_click OF cl_salv_events_table
+        IMPORTING row column.
+ENDCLASS.
+
+CLASS lcl_event_handler IMPLEMENTATION.
+  METHOD on_link_click.
+    READ TABLE lcl_model=>gt_final INTO DATA(ls_final) INDEX row.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+
+    IF column = 'MATERIAL'.
+      SET PARAMETER ID 'MAT' FIELD ls_final-material.
+      CALL TRANSACTION 'MM03' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+************************************************************************
+* View Class
+************************************************************************
+CLASS lcl_view DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      display_write,
+      display_alv.
+ENDCLASS.
+
+CLASS lcl_view IMPLEMENTATION.
+
+  METHOD display_write.
+    DATA ls_final TYPE ty_final.
+
+    WRITE: / text-h01.
+    WRITE: / text-h02.
+    WRITE: / 'Executed by:', sy-uname.
+    WRITE: / 'Executed on:', sy-datum, sy-uzeit.
+    SKIP.
+
+    FORMAT COLOR COL_HEADING INTENSIFIED ON.
+    WRITE: / text-c01, 20 text-c02, 35 text-c03, 50 text-c04, 68 text-c05,
+             80 text-c06, 100 text-c07, 125 text-c08, 155 text-c09.
+    WRITE: / text-c10, 40 text-c11, 60 text-c12, 80 text-c13, 100 text-c14,
+             115 text-c15.
+    FORMAT RESET.
+
+    LOOP AT lcl_model=>gt_final INTO ls_final.
+      WRITE: / ls_final-material,
+               20 ls_final-changed_on,
+               35 ls_final-change_time,
+               50 ls_final-changed_by,
+               68 ls_final-tabname,
+               80 ls_final-fname,
+               100 ls_final-change_type,
+               125 ls_final-old_contents,
+               155 ls_final-new_contents.
+      WRITE: / ls_final-table_key,
+               40 ls_final-change_object,
+               60 ls_final-object_value,
+               80 ls_final-change_number,
+               100 ls_final-tcode,
+               115 ls_final-mat_desc.
+      ULINE.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD display_alv.
+    DATA: lo_alv       TYPE REF TO cl_salv_table,
+          lo_columns   TYPE REF TO cl_salv_columns_table,
+          lo_column    TYPE REF TO cl_salv_column_table,
+          lo_functions TYPE REF TO cl_salv_functions_list,
+          lo_display   TYPE REF TO cl_salv_display_settings,
+          lo_sorts     TYPE REF TO cl_salv_sorts,
+          lo_events    TYPE REF TO cl_salv_events_table,
+          lo_handler   TYPE REF TO lcl_event_handler.
+
+    TRY.
+        cl_salv_table=>factory(
+          IMPORTING
+            r_salv_table = lo_alv
+          CHANGING
+            t_table      = lcl_model=>gt_final ).
+
+        lo_columns = lo_alv->get_columns( ).
+        lo_columns->set_optimize( abap_true ).
+        lo_columns->set_color_column( 'CELL_COLOR' ).
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'MATERIAL' ).
+            lo_column->set_short_text( text-c01 ).
+            lo_column->set_medium_text( text-c01 ).
+            lo_column->set_long_text( text-c01 ).
+            lo_column->set_cell_type( if_salv_c_cell_type=>hotspot ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'CHANGED_ON' ).
+            lo_column->set_short_text( text-c02 ).
+            lo_column->set_medium_text( text-c02 ).
+            lo_column->set_long_text( text-c02 ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'CHANGE_TIME' ).
+            lo_column->set_short_text( text-c03 ).
+            lo_column->set_medium_text( text-c03 ).
+            lo_column->set_long_text( text-c03 ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'CHANGED_BY' ).
+            lo_column->set_short_text( text-c04 ).
+            lo_column->set_medium_text( text-c04 ).
+            lo_column->set_long_text( text-c04 ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'TABNAME' ).
+            lo_column->set_short_text( text-c05 ).
+            lo_column->set_medium_text( text-c05 ).
+            lo_column->set_long_text( text-c05 ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'FNAME' ).
+            lo_column->set_short_text( text-c06 ).
+            lo_column->set_medium_text( text-c06 ).
+            lo_column->set_long_text( text-c06 ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'CHANGE_TYPE' ).
+            lo_column->set_short_text( text-c07 ).
+            lo_column->set_medium_text( text-c07 ).
+            lo_column->set_long_text( text-c07 ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'OLD_CONTENTS' ).
+            lo_column->set_short_text( text-c08 ).
+            lo_column->set_medium_text( text-c08 ).
+            lo_column->set_long_text( text-c08 ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'NEW_CONTENTS' ).
+            lo_column->set_short_text( text-c09 ).
+            lo_column->set_medium_text( text-c09 ).
+            lo_column->set_long_text( text-c09 ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'TABLE_KEY' ).
+            lo_column->set_short_text( text-c10 ).
+            lo_column->set_medium_text( text-c10 ).
+            lo_column->set_long_text( text-c10 ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'CHANGE_OBJECT' ).
+            lo_column->set_short_text( text-c11 ).
+            lo_column->set_medium_text( text-c11 ).
+            lo_column->set_long_text( text-c11 ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'OBJECT_VALUE' ).
+            lo_column->set_short_text( text-c12 ).
+            lo_column->set_medium_text( text-c12 ).
+            lo_column->set_long_text( text-c12 ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'CHANGE_NUMBER' ).
+            lo_column->set_short_text( text-c13 ).
+            lo_column->set_medium_text( text-c13 ).
+            lo_column->set_long_text( text-c13 ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'TCODE' ).
+            lo_column->set_short_text( text-c14 ).
+            lo_column->set_medium_text( text-c14 ).
+            lo_column->set_long_text( text-c14 ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'MAT_DESC' ).
+            lo_column->set_short_text( text-c15 ).
+            lo_column->set_medium_text( text-c15 ).
+            lo_column->set_long_text( text-c15 ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'CELL_COLOR' ).
+            lo_column->set_technical( abap_true ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        lo_functions = lo_alv->get_functions( ).
+        lo_functions->set_all( abap_true ).
+
+        lo_display = lo_alv->get_display_settings( ).
+        lo_display->set_list_header( text-h01 ).
+        lo_display->set_striped_pattern( abap_true ).
+
+        DATA(lo_header) = NEW cl_salv_form_layout_grid( ).
+
+        lo_header->create_label(
+          row    = 1
+          column = 1
+          text   = text-h01 ).
+
+        lo_header->create_label(
+          row    = 2
+          column = 1
+          text   = text-h02 ).
+
+        lo_header->create_label(
+          row    = 3
+          column = 1
+          text   = |Executed by: { sy-uname }| ).
+
+        lo_header->create_label(
+          row    = 4
+          column = 1
+          text   = |Executed on: { sy-datum DATE = USER } { sy-uzeit TIME = USER }| ).
+
+        lo_alv->set_top_of_list( lo_header ).
+
+        lo_sorts = lo_alv->get_sorts( ).
+        lo_sorts->add_sort(
+          columnname = 'MATERIAL'
+          sequence   = if_salv_c_sort=>sort_up ).
+
+        lo_sorts->add_sort(
+          columnname = 'CHANGED_ON'
+          sequence   = if_salv_c_sort=>sort_down ).
+
+        lo_sorts->add_sort(
+          columnname = 'CHANGE_TIME'
+          sequence   = if_salv_c_sort=>sort_up ).
+
+        lo_sorts->add_sort(
+          columnname = 'CHANGED_BY'
+          sequence   = if_salv_c_sort=>sort_up ).
+
+        lo_events = lo_alv->get_event( ).
+        CREATE OBJECT lo_handler.
+        SET HANDLER lo_handler->on_link_click FOR lo_events.
+
+        lo_alv->display( ).
+
+      CATCH cx_salv_msg INTO DATA(lx_salv).
+        MESSAGE lx_salv->get_text( ) TYPE 'I'.
+    ENDTRY.
+  ENDMETHOD.
+
+ENDCLASS.
+
+************************************************************************
+* Data
+************************************************************************
+DATA: go_model TYPE REF TO lcl_model,
+      go_view  TYPE REF TO lcl_view.
+
+************************************************************************
+* Selection-Screen Validation
+************************************************************************
+AT SELECTION-SCREEN.
+  lcl_model=>validate_material_input(
+    it_matnr = s_matnr[] ).
+
+  lcl_model=>validate_change_date_input(
+    it_udate = s_udate[] ).
+
+  lcl_model=>validate_material_type_input(
+    iv_mtart = p_mtart ).
+
+************************************************************************
+* Main Processing
+************************************************************************
+START-OF-SELECTION.
+
+  CREATE OBJECT go_model.
+  go_model->get_data(
+    it_matnr = s_matnr[]
+    it_udate = s_udate[]
+    iv_mtart = p_mtart
+    iv_hili  = COND abap_bool(
+                 WHEN p_hili = 'X' THEN abap_true
+                 ELSE abap_false ) ).
+
+  CREATE OBJECT go_view.
+
+  IF p_write = 'X'.
+    go_view->display_write( ).
+  ELSE.
+    go_view->display_alv( ).
+  ENDIF.
+
+
+
+
+
+
+TEXT-T01 = Criteria
+TEXT-T02 = Select a View
+TEXT-E01 = Invalid Material
+TEXT-E02 = Enter a change date
+TEXT-E03 = Date specified is in the future, enter a valid date
+TEXT-E04 = Invalid Material Type
+TEXT-E05 = No data found.
+TEXT-H01 = Material Master Report
+TEXT-H02 = Material Audit View
+TEXT-C01 = Material
+TEXT-C02 = Changed On
+TEXT-C03 = Change Time
+TEXT-C04 = Changed By
+TEXT-C05 = Table
+TEXT-C06 = Field
+TEXT-C07 = Change Type
+TEXT-C08 = Old Contents
+TEXT-C09 = New Contents
+TEXT-C10 = Table Key
+TEXT-C11 = Change Object
+TEXT-C12 = Object Value
+TEXT-C13 = Change Number
+TEXT-C14 = Transaction
+TEXT-C15 = Mat Description
+
+
+
+REPORT y19999999_mmr_matrep.
