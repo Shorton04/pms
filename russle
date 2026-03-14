@@ -17,12 +17,26 @@ TABLES: mara,
 * TEXT-H01 = Material Master Report
 * TEXT-H02 = Material Batch View
 *
-* TEXT-C01 = Plant
-* TEXT-C02 = Plant Name
-* TEXT-C03 = Batch
-* TEXT-C04 = Material Type
-* TEXT-C05 = Material Group
-* TEXT-C06 = Industry Sector
+* TEXT-C01 = Material
+* TEXT-C02 = Plant
+* TEXT-C03 = Plant Name
+* TEXT-C04 = Batch
+* TEXT-C05 = Created On
+* TEXT-C06 = Created By
+* TEXT-C07 = Changed On
+* TEXT-C08 = Changed By
+* TEXT-C09 = Material Type
+* TEXT-C10 = Valuation Type
+* TEXT-C11 = Material Group
+* TEXT-C12 = Industry Sector
+* TEXT-C13 = Gross Weight
+* TEXT-C14 = Net Weight
+* TEXT-C15 = Unit of Weight
+* TEXT-C16 = Volume
+* TEXT-C17 = Volume Unit
+* TEXT-C18 = Supplier
+* TEXT-C19 = Goods Receipt
+* TEXT-C20 = Country
 
 ************************************************************************
 * TYPES
@@ -35,9 +49,21 @@ TYPES: BEGIN OF ty_raw,
          mtart TYPE mara-mtart,
          matkl TYPE mara-matkl,
          mbrsh TYPE mara-mbrsh,
+         brgew TYPE mara-brgew,
+         ntgew TYPE mara-ntgew,
+         gewei TYPE mara-gewei,
+         volum TYPE mara-volum,
+         voleh TYPE mara-voleh,
          werks TYPE mcha-werks,
          charg TYPE mcha-charg,
          ersda TYPE mcha-ersda,
+         ernam TYPE mcha-ernam,
+         laeda TYPE mcha-laeda,
+         aenam TYPE mcha-aenam,
+         bwtar TYPE mcha-bwtar,
+         lifnr TYPE mcha-lifnr,
+         lwedt TYPE mcha-lwedt,
+         herkl TYPE mcha-herkl,
        END OF ty_raw.
 TYPES tt_raw TYPE STANDARD TABLE OF ty_raw WITH DEFAULT KEY.
 
@@ -48,20 +74,34 @@ TYPES: BEGIN OF ty_t001w,
 TYPES tt_t001w TYPE STANDARD TABLE OF ty_t001w WITH DEFAULT KEY.
 
 TYPES: BEGIN OF ty_final,
-         plant           TYPE mcha-werks,
-         plant_name      TYPE t001w-name1,
-         batch           TYPE mcha-charg,
-         material_type   TYPE mara-mtart,
-         material_group  TYPE mara-matkl,
+         material       TYPE mara-matnr,
+         plant          TYPE mcha-werks,
+         plant_name     TYPE t001w-name1,
+         batch          TYPE mcha-charg,
+         created_on     TYPE char10,
+         created_by     TYPE mcha-ernam,
+         changed_on     TYPE char10,
+         changed_by     TYPE mcha-aenam,
+         material_type  TYPE mara-mtart,
+         valuation_type TYPE mcha-bwtar,
+         material_group TYPE mara-matkl,
          industry_sector TYPE mara-mbrsh,
-         cell_color      TYPE lvc_t_scol,
+         gross_weight   TYPE mara-brgew,
+         net_weight     TYPE mara-ntgew,
+         unit_weight    TYPE mara-gewei,
+         volume         TYPE mara-volum,
+         volume_unit    TYPE mara-voleh,
+         supplier       TYPE mcha-lifnr,
+         goods_receipt  TYPE char10,
+         country        TYPE mcha-herkl,
+         cell_color     TYPE lvc_t_scol,
        END OF ty_final.
 TYPES tt_final TYPE STANDARD TABLE OF ty_final WITH DEFAULT KEY.
 
 ************************************************************************
 * SELECTION SCREEN
 ************************************************************************
-SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-t01.
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-t01.
   SELECT-OPTIONS:
     s_matnr FOR mara-matnr,
     s_ersda FOR mcha-ersda.
@@ -70,12 +110,17 @@ SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-t01.
     p_werks TYPE mcha-werks.
 SELECTION-SCREEN END OF BLOCK b1.
 
-SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-t02.
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-t02.
   PARAMETERS:
     p_writ RADIOBUTTON GROUP rg1,
     p_alv  RADIOBUTTON GROUP rg1 DEFAULT 'X',
     p_hili AS CHECKBOX DEFAULT 'X'.
 SELECTION-SCREEN END OF BLOCK b2.
+
+************************************************************************
+* EVENT HANDLER CLASS
+************************************************************************
+CLASS lcl_event_handler DEFINITION DEFERRED.
 
 ************************************************************************
 * HELPER CLASS
@@ -95,7 +140,6 @@ CLASS lcl_util DEFINITION.
         RETURNING
           VALUE(rv_text) TYPE char8.
 ENDCLASS.
-
 
 ************************************************************************
 * MODEL CLASS
@@ -146,6 +190,17 @@ CLASS lcl_view DEFINITION.
 ENDCLASS.
 
 ************************************************************************
+* EVENT HANDLER CLASS
+************************************************************************
+CLASS lcl_event_handler DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      on_link_click
+        FOR EVENT link_click OF cl_salv_events_table
+        IMPORTING row column.
+ENDCLASS.
+
+************************************************************************
 * HELPER CLASS IMPLEMENTATION
 ************************************************************************
 CLASS lcl_util IMPLEMENTATION.
@@ -178,7 +233,6 @@ CLASS lcl_util IMPLEMENTATION.
   ENDMETHOD.
 ENDCLASS.
 
-
 ************************************************************************
 * MODEL CLASS IMPLEMENTATION
 ************************************************************************
@@ -189,25 +243,54 @@ CLASS lcl_model IMPLEMENTATION.
     FIELD-SYMBOLS <fs_matnr> LIKE LINE OF it_matnr.
 
     LOOP AT it_matnr ASSIGNING <fs_matnr>.
-      IF <fs_matnr>-low IS NOT INITIAL.
-        SELECT SINGLE matnr
-          INTO @lv_matnr
-          FROM mara
-          WHERE matnr = @<fs_matnr>-low.
-        IF sy-subrc <> 0.
-          MESSAGE TEXT-e01 TYPE 'E'.
-        ENDIF.
-      ENDIF.
+      CHECK <fs_matnr>-sign = 'I'.
 
-      IF <fs_matnr>-high IS NOT INITIAL.
-        SELECT SINGLE matnr
-          INTO @lv_matnr
-          FROM mara
-          WHERE matnr = @<fs_matnr>-high.
-        IF sy-subrc <> 0.
-          MESSAGE TEXT-e01 TYPE 'E'.
-        ENDIF.
-      ENDIF.
+      CASE <fs_matnr>-option.
+        WHEN 'EQ'.
+          IF <fs_matnr>-low IS NOT INITIAL.
+            SELECT SINGLE matnr
+              INTO @lv_matnr
+              FROM mara
+              WHERE matnr = @<fs_matnr>-low.
+            IF sy-subrc <> 0.
+              MESSAGE text-e01 TYPE 'E'.
+            ENDIF.
+          ENDIF.
+
+        WHEN 'BT'.
+          IF <fs_matnr>-low IS NOT INITIAL
+             AND <fs_matnr>-high IS NOT INITIAL.
+            SELECT SINGLE matnr
+              INTO @lv_matnr
+              FROM mara
+              WHERE matnr BETWEEN @<fs_matnr>-low AND @<fs_matnr>-high.
+            IF sy-subrc <> 0.
+              MESSAGE text-e01 TYPE 'E'.
+            ENDIF.
+          ENDIF.
+
+        WHEN 'CP'.
+          IF <fs_matnr>-low IS NOT INITIAL.
+            SELECT SINGLE matnr
+              INTO @lv_matnr
+              FROM mara
+              WHERE matnr LIKE @<fs_matnr>-low.
+            IF sy-subrc <> 0.
+              MESSAGE text-e01 TYPE 'E'.
+            ENDIF.
+          ENDIF.
+
+        WHEN OTHERS.
+          IF <fs_matnr>-low IS NOT INITIAL.
+            SELECT SINGLE matnr
+              INTO @lv_matnr
+              FROM mara
+              WHERE matnr = @<fs_matnr>-low.
+            IF sy-subrc <> 0.
+              MESSAGE text-e01 TYPE 'E'.
+            ENDIF.
+          ENDIF.
+      ENDCASE.
     ENDLOOP.
   ENDMETHOD.
 
@@ -216,11 +299,11 @@ CLASS lcl_model IMPLEMENTATION.
 
     LOOP AT it_ersda INTO ls_ersda.
       IF ls_ersda-low IS NOT INITIAL AND ls_ersda-low > sy-datum.
-        MESSAGE TEXT-e02 TYPE 'E'.
+        MESSAGE text-e02 TYPE 'E'.
       ENDIF.
 
       IF ls_ersda-high IS NOT INITIAL AND ls_ersda-high > sy-datum.
-        MESSAGE TEXT-e02 TYPE 'E'.
+        MESSAGE text-e02 TYPE 'E'.
       ENDIF.
     ENDLOOP.
   ENDMETHOD.
@@ -238,7 +321,7 @@ CLASS lcl_model IMPLEMENTATION.
       WHERE werks = @iv_werks.
 
     IF sy-subrc <> 0.
-      MESSAGE TEXT-e03 TYPE 'E'.
+      MESSAGE text-e03 TYPE 'E'.
     ENDIF.
   ENDMETHOD.
 
@@ -249,9 +332,21 @@ CLASS lcl_model IMPLEMENTATION.
            a~mtart,
            a~matkl,
            a~mbrsh,
+           a~brgew,
+           a~ntgew,
+           a~gewei,
+           a~volum,
+           a~voleh,
            b~werks,
            b~charg,
-           b~ersda
+           b~ersda,
+           b~ernam,
+           b~laeda,
+           b~aenam,
+           b~bwtar,
+           b~lifnr,
+           b~lwedt,
+           b~herkl
       FROM mara AS a
       INNER JOIN mcha AS b
         ON a~matnr = b~matnr
@@ -260,10 +355,10 @@ CLASS lcl_model IMPLEMENTATION.
         AND ( b~werks = @iv_werks OR @iv_werks IS INITIAL )
       INTO TABLE @gt_raw.
 
-    SORT gt_raw BY werks charg ersda matnr.
+    SORT gt_raw BY matnr werks charg ersda.
 
     IF gt_raw IS INITIAL.
-      MESSAGE TEXT-e04 TYPE 'S' DISPLAY LIKE 'E'.
+      MESSAGE text-e04 TYPE 'S' DISPLAY LIKE 'E'.
       LEAVE LIST-PROCESSING.
     ENDIF.
 
@@ -279,7 +374,7 @@ CLASS lcl_model IMPLEMENTATION.
     build_final_output( iv_hili = iv_hili ).
 
     IF gt_final IS INITIAL.
-      MESSAGE TEXT-e04 TYPE 'S' DISPLAY LIKE 'E'.
+      MESSAGE text-e04 TYPE 'S' DISPLAY LIKE 'E'.
       LEAVE LIST-PROCESSING.
     ENDIF.
   ENDMETHOD.
@@ -297,16 +392,30 @@ CLASS lcl_model IMPLEMENTATION.
         WITH KEY werks = ls_raw-werks
         BINARY SEARCH.
 
+      ls_final-material        = ls_raw-matnr.
       ls_final-plant           = ls_raw-werks.
       ls_final-plant_name      = ls_t001w-name1.
       ls_final-batch           = ls_raw-charg.
+      ls_final-created_on      = lcl_util=>format_date_mdy( ls_raw-ersda ).
+      ls_final-created_by      = ls_raw-ernam.
+      ls_final-changed_on      = lcl_util=>format_date_mdy( ls_raw-laeda ).
+      ls_final-changed_by      = ls_raw-aenam.
       ls_final-material_type   = ls_raw-mtart.
+      ls_final-valuation_type  = ls_raw-bwtar.
       ls_final-material_group  = ls_raw-matkl.
       ls_final-industry_sector = ls_raw-mbrsh.
+      ls_final-gross_weight    = ls_raw-brgew.
+      ls_final-net_weight      = ls_raw-ntgew.
+      ls_final-unit_weight     = ls_raw-gewei.
+      ls_final-volume          = ls_raw-volum.
+      ls_final-volume_unit     = ls_raw-voleh.
+      ls_final-supplier        = ls_raw-lifnr.
+      ls_final-goods_receipt   = lcl_util=>format_date_mdy( ls_raw-lwedt ).
+      ls_final-country         = ls_raw-herkl.
 
       IF iv_hili = abap_true.
         CLEAR ls_scol.
-        ls_scol-fname = 'PLANT'.
+        ls_scol-fname = 'MATERIAL'.
         ls_scol-color-col = 5.
         ls_scol-color-int = 1.
         ls_scol-color-inv = 0.
@@ -316,11 +425,28 @@ CLASS lcl_model IMPLEMENTATION.
       APPEND ls_final TO gt_final.
     ENDLOOP.
 
-    SORT gt_final BY plant ASCENDING
-                     plant_name ASCENDING
+    SORT gt_final BY material ASCENDING
+                     plant ASCENDING
                      batch ASCENDING.
   ENDMETHOD.
 
+ENDCLASS.
+
+************************************************************************
+* EVENT HANDLER IMPLEMENTATION
+************************************************************************
+CLASS lcl_event_handler IMPLEMENTATION.
+  METHOD on_link_click.
+    READ TABLE lcl_model=>gt_final INTO DATA(ls_final) INDEX row.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+
+    IF column = 'MATERIAL' AND p_hili = 'X'.
+      SET PARAMETER ID 'MAT' FIELD ls_final-material.
+      CALL TRANSACTION 'MM03' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+    ENDIF.
+  ENDMETHOD.
 ENDCLASS.
 
 ************************************************************************
@@ -330,32 +456,63 @@ CLASS lcl_view IMPLEMENTATION.
 
   METHOD display_write.
     DATA: ls_final     TYPE ty_final,
-          lv_exec_date TYPE char10.
+          lv_exec_date TYPE char10,
+          lv_exec_time TYPE char8.
 
     lv_exec_date = lcl_util=>format_date_mdy( sy-datum ).
+    lv_exec_time = lcl_util=>format_time_military( sy-uzeit ).
 
-    WRITE: / TEXT-h01.
-    WRITE: / TEXT-h02.
+    WRITE: / text-h01.
+    WRITE: / text-h02.
     WRITE: / 'Executed by:', sy-uname.
-    WRITE: / 'Executed on:', lv_exec_date, sy-uzeit.
+    WRITE: / 'Executed on:', lv_exec_date, lv_exec_time.
     SKIP.
 
     FORMAT COLOR COL_HEADING INTENSIFIED ON.
-    WRITE: / TEXT-c01,
-             15 TEXT-c02,
-             50 TEXT-c03,
-             70 TEXT-c04,
-             95 TEXT-c05,
-             120 TEXT-c06.
+    WRITE: / text-c01,
+             20 text-c02,
+             32 text-c03,
+             60 text-c04,
+             75 text-c05,
+             88 text-c06,
+             102 text-c07,
+             115 text-c08,
+             128 text-c09,
+             142 text-c10.
+    WRITE: / text-c11,
+             20 text-c12,
+             38 text-c13,
+             55 text-c14,
+             72 text-c15,
+             88 text-c16,
+             104 text-c17,
+             120 text-c18,
+             136 text-c19,
+             152 text-c20.
     FORMAT RESET.
 
     LOOP AT lcl_model=>gt_final INTO ls_final.
-      WRITE: / ls_final-plant,
-               15 ls_final-plant_name,
-               50 ls_final-batch,
-               70 ls_final-material_type,
-               95 ls_final-material_group,
-               120 ls_final-industry_sector.
+      WRITE: / ls_final-material,
+               20 ls_final-plant,
+               32 ls_final-plant_name,
+               60 ls_final-batch,
+               75 ls_final-created_on,
+               88 ls_final-created_by,
+               102 ls_final-changed_on,
+               115 ls_final-changed_by,
+               128 ls_final-material_type,
+               142 ls_final-valuation_type.
+      WRITE: / ls_final-material_group,
+               20 ls_final-industry_sector,
+               38 ls_final-gross_weight,
+               55 ls_final-net_weight,
+               72 ls_final-unit_weight,
+               88 ls_final-volume,
+               104 ls_final-volume_unit,
+               120 ls_final-supplier,
+               136 ls_final-goods_receipt,
+               152 ls_final-country.
+      ULINE.
     ENDLOOP.
   ENDMETHOD.
 
@@ -367,6 +524,8 @@ CLASS lcl_view IMPLEMENTATION.
           lo_display   TYPE REF TO cl_salv_display_settings,
           lo_sorts     TYPE REF TO cl_salv_sorts,
           lo_header    TYPE REF TO cl_salv_form_layout_grid,
+          lo_events    TYPE REF TO cl_salv_events_table,
+          lo_handler   TYPE REF TO lcl_event_handler,
           lv_exec_date TYPE char10,
           lv_exec_time TYPE char8.
 
@@ -393,50 +552,165 @@ CLASS lcl_view IMPLEMENTATION.
         ENDTRY.
 
         TRY.
+            lo_column ?= lo_columns->get_column( 'MATERIAL' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c01 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c01 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c01 ) ).
+            IF p_hili = 'X'.
+              lo_column->set_cell_type( if_salv_c_cell_type=>hotspot ).
+            ENDIF.
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
             lo_column ?= lo_columns->get_column( 'PLANT' ).
-            lo_column->set_short_text(  CONV scrtext_s( TEXT-c01 ) ).
-            lo_column->set_medium_text( CONV scrtext_m( TEXT-c01 ) ).
-            lo_column->set_long_text(   CONV scrtext_l( TEXT-c01 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c02 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c02 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c02 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'PLANT_NAME' ).
-            lo_column->set_short_text(  CONV scrtext_s( TEXT-c02 ) ).
-            lo_column->set_medium_text( CONV scrtext_m( TEXT-c02 ) ).
-            lo_column->set_long_text(   CONV scrtext_l( TEXT-c02 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c03 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c03 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c03 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'BATCH' ).
-            lo_column->set_short_text(  CONV scrtext_s( TEXT-c03 ) ).
-            lo_column->set_medium_text( CONV scrtext_m( TEXT-c03 ) ).
-            lo_column->set_long_text(   CONV scrtext_l( TEXT-c03 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c04 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c04 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c04 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'CREATED_ON' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c05 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c05 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c05 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'CREATED_BY' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c06 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c06 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c06 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'CHANGED_ON' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c07 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c07 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c07 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'CHANGED_BY' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c08 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c08 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c08 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'MATERIAL_TYPE' ).
-            lo_column->set_short_text(  CONV scrtext_s( TEXT-c04 ) ).
-            lo_column->set_medium_text( CONV scrtext_m( TEXT-c04 ) ).
-            lo_column->set_long_text(   CONV scrtext_l( TEXT-c04 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c09 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c09 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c09 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'VALUATION_TYPE' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c10 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c10 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c10 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'MATERIAL_GROUP' ).
-            lo_column->set_short_text(  CONV scrtext_s( TEXT-c05 ) ).
-            lo_column->set_medium_text( CONV scrtext_m( TEXT-c05 ) ).
-            lo_column->set_long_text(   CONV scrtext_l( TEXT-c05 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c11 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c11 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c11 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_column ?= lo_columns->get_column( 'INDUSTRY_SECTOR' ).
-            lo_column->set_short_text(  CONV scrtext_s( TEXT-c06 ) ).
-            lo_column->set_medium_text( CONV scrtext_m( TEXT-c06 ) ).
-            lo_column->set_long_text(   CONV scrtext_l( TEXT-c06 ) ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c12 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c12 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c12 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'GROSS_WEIGHT' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c13 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c13 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c13 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'NET_WEIGHT' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c14 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c14 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c14 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'UNIT_WEIGHT' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c15 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c15 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c15 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'VOLUME' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c16 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c16 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c16 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'VOLUME_UNIT' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c17 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c17 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c17 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'SUPPLIER' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c18 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c18 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c18 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'GOODS_RECEIPT' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c19 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c19 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c19 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'COUNTRY' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c20 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c20 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c20 ) ).
           CATCH cx_salv_not_found cx_salv_data_error.
         ENDTRY.
 
@@ -451,19 +725,19 @@ CLASS lcl_view IMPLEMENTATION.
 
         lo_display = lo_alv->get_display_settings( ).
         lo_display->set_striped_pattern( abap_true ).
-        lo_display->set_list_header( TEXT-h01 ).
+        lo_display->set_list_header( text-h01 ).
 
         CREATE OBJECT lo_header.
 
         lo_header->create_label(
           row    = 1
           column = 1
-          text   = TEXT-h01 ).
+          text   = text-h01 ).
 
         lo_header->create_label(
           row    = 2
           column = 1
-          text   = TEXT-h02 ).
+          text   = text-h02 ).
 
         lo_header->create_label(
           row    = 3
@@ -481,14 +755,14 @@ CLASS lcl_view IMPLEMENTATION.
 
         TRY.
             lo_sorts->add_sort(
-              columnname = 'PLANT'
+              columnname = 'MATERIAL'
               sequence   = if_salv_c_sort=>sort_up ).
           CATCH cx_salv_not_found cx_salv_existing cx_salv_data_error.
         ENDTRY.
 
         TRY.
             lo_sorts->add_sort(
-              columnname = 'PLANT_NAME'
+              columnname = 'PLANT'
               sequence   = if_salv_c_sort=>sort_up ).
           CATCH cx_salv_not_found cx_salv_existing cx_salv_data_error.
         ENDTRY.
@@ -499,6 +773,10 @@ CLASS lcl_view IMPLEMENTATION.
               sequence   = if_salv_c_sort=>sort_up ).
           CATCH cx_salv_not_found cx_salv_existing cx_salv_data_error.
         ENDTRY.
+
+        lo_events = lo_alv->get_event( ).
+        CREATE OBJECT lo_handler.
+        SET HANDLER lo_handler->on_link_click FOR lo_events.
 
         lo_alv->display( ).
 
