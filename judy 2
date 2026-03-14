@@ -1,0 +1,126 @@
+METHOD validate_reservation_input.
+  DATA lv_rsnum TYPE rkpf-rsnum.
+  FIELD-SYMBOLS <fs_rsnum> LIKE LINE OF it_rsnum.
+
+  LOOP AT it_rsnum ASSIGNING <fs_rsnum>.
+
+    CHECK <fs_rsnum>-sign = 'I'.
+
+    CASE <fs_rsnum>-option.
+
+      WHEN 'EQ'.
+        IF <fs_rsnum>-low IS NOT INITIAL.
+          SELECT SINGLE rsnum
+            INTO @lv_rsnum
+            FROM rkpf
+            WHERE rsnum = @<fs_rsnum>-low.
+          IF sy-subrc <> 0.
+            MESSAGE text-e01 TYPE 'E'.
+          ENDIF.
+        ENDIF.
+
+      WHEN 'BT'.
+        IF <fs_rsnum>-low IS NOT INITIAL
+           AND <fs_rsnum>-high IS NOT INITIAL.
+
+          SELECT SINGLE rsnum
+            INTO @lv_rsnum
+            FROM rkpf
+            WHERE rsnum BETWEEN @<fs_rsnum>-low AND @<fs_rsnum>-high.
+
+          IF sy-subrc <> 0.
+            MESSAGE text-e01 TYPE 'E'.
+          ENDIF.
+        ENDIF.
+
+      WHEN 'CP' OR 'NP'.
+        IF <fs_rsnum>-low IS NOT INITIAL.
+          SELECT SINGLE rsnum
+            INTO @lv_rsnum
+            FROM rkpf
+            WHERE rsnum LIKE @<fs_rsnum>-low.
+          IF sy-subrc <> 0.
+            MESSAGE text-e01 TYPE 'E'.
+          ENDIF.
+        ENDIF.
+
+      WHEN OTHERS.
+        IF <fs_rsnum>-low IS NOT INITIAL.
+          SELECT SINGLE rsnum
+            INTO @lv_rsnum
+            FROM rkpf
+            WHERE rsnum = @<fs_rsnum>-low.
+          IF sy-subrc <> 0.
+            MESSAGE text-e01 TYPE 'E'.
+          ENDIF.
+        ENDIF.
+
+    ENDCASE.
+
+  ENDLOOP.
+ENDMETHOD.
+
+
+
+
+METHOD validate_material_input.
+  DATA lv_matnr TYPE mara-matnr.
+  FIELD-SYMBOLS <fs_matnr> LIKE LINE OF it_matnr.
+
+  LOOP AT it_matnr ASSIGNING <fs_matnr>.
+
+    CHECK <fs_matnr>-sign = 'I'.
+
+    CASE <fs_matnr>-option.
+
+      WHEN 'EQ'.
+        IF <fs_matnr>-low IS NOT INITIAL.
+          SELECT SINGLE matnr
+            INTO @lv_matnr
+            FROM mara
+            WHERE matnr = @<fs_matnr>-low.
+          IF sy-subrc <> 0.
+            MESSAGE text-e02 TYPE 'E'.
+          ENDIF.
+        ENDIF.
+
+      WHEN 'BT'.
+        IF <fs_matnr>-low IS NOT INITIAL
+           AND <fs_matnr>-high IS NOT INITIAL.
+
+          SELECT SINGLE matnr
+            INTO @lv_matnr
+            FROM mara
+            WHERE matnr BETWEEN @<fs_matnr>-low AND @<fs_matnr>-high.
+
+          IF sy-subrc <> 0.
+            MESSAGE text-e02 TYPE 'E'.
+          ENDIF.
+        ENDIF.
+
+      WHEN 'CP'.
+        IF <fs_matnr>-low IS NOT INITIAL.
+          SELECT SINGLE matnr
+            INTO @lv_matnr
+            FROM mara
+            WHERE matnr LIKE @<fs_matnr>-low.
+          IF sy-subrc <> 0.
+            MESSAGE text-e02 TYPE 'E'.
+          ENDIF.
+        ENDIF.
+
+      WHEN OTHERS.
+        IF <fs_matnr>-low IS NOT INITIAL.
+          SELECT SINGLE matnr
+            INTO @lv_matnr
+            FROM mara
+            WHERE matnr = @<fs_matnr>-low.
+          IF sy-subrc <> 0.
+            MESSAGE text-e02 TYPE 'E'.
+          ENDIF.
+        ENDIF.
+
+    ENDCASE.
+
+  ENDLOOP.
+ENDMETHOD.
