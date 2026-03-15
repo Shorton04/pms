@@ -1,0 +1,958 @@
+REPORT zmm_reservation_report.
+
+INCLUDE zmm_reservation_report_top.
+INCLUDE zmm_reservation_report_sel.
+INCLUDE zmm_reservation_report_f01.
+
+AT SELECTION-SCREEN.
+
+  lcl_reservation_service=>validate_reservation_input(
+    it_reservation = so_reservation[] ).
+
+  lcl_reservation_service=>validate_material_input(
+    it_material = so_material[] ).
+
+  lcl_reservation_service=>validate_plant_input(
+    iv_plant = p_plant ).
+
+START-OF-SELECTION.
+
+  CREATE OBJECT go_reservation_service.
+
+  go_reservation_service->get_data(
+    it_reservation = so_reservation[]
+    it_material    = so_material[]
+    iv_plant       = p_plant
+    iv_highlight   = COND abap_bool(
+                       WHEN p_hili = 'X'
+                       THEN abap_true
+                       ELSE abap_false ) ).
+
+  CREATE OBJECT go_reservation_view.
+
+  IF p_writ = 'X'.
+    go_reservation_view->display_write( ).
+  ELSE.
+    go_reservation_view->display_alv( ).
+  ENDIF.
+
+
+
+TABLES: mara,
+        resb,
+        rkpf.
+
+************************************************************************
+* TEXT ELEMENTS TO MAINTAIN IN SE38
+************************************************************************
+* TEXT-T01 = Criteria
+* TEXT-T02 = Select a View
+*
+* TEXT-E01 = Invalid Reservation
+* TEXT-E02 = Invalid Material
+* TEXT-E03 = Invalid Plant
+* TEXT-E04 = No data found.
+*
+* TEXT-H01 = Material Reserve Report
+* TEXT-H02 = Material Reserve Item View
+*
+* TEXT-C01 = Reservation
+* TEXT-C02 = Plant
+* TEXT-C03 = Material
+* TEXT-C04 = Mat. Description
+* TEXT-C05 = Item no.
+* TEXT-C06 = Order
+* TEXT-C07 = Reqt. Type
+* TEXT-C08 = Movement Type
+* TEXT-C09 = G/L Account
+* TEXT-C10 = SLoc
+* TEXT-C11 = Batch
+* TEXT-C12 = Reqt Date
+* TEXT-C13 = Reqt qty
+* TEXT-C14 = Base Unit
+* TEXT-C15 = Debit/Credit
+* TEXT-C16 = Withdrawal Qty
+* TEXT-C17 = Withdr. Value
+* TEXT-C18 = Currency
+* TEXT-C19 = Quantity in UnE
+* TEXT-C20 = Unit of Entry
+
+************************************************************************
+* TYPES
+************************************************************************
+TYPES: ty_r_reservation TYPE RANGE OF rkpf-rsnum,
+       ty_r_material    TYPE RANGE OF mara-matnr.
+
+TYPES: BEGIN OF ty_reservation_data,
+         rsnum TYPE resb-rsnum,
+         werks TYPE resb-werks,
+         matnr TYPE resb-matnr,
+         rspos TYPE resb-rspos,
+         aufnr TYPE resb-aufnr,
+         bdart TYPE resb-bdart,
+         bwart TYPE resb-bwart,
+         saknr TYPE resb-saknr,
+         lgort TYPE resb-lgort,
+         charg TYPE resb-charg,
+         bdter TYPE resb-bdter,
+         bdmng TYPE resb-bdmng,
+         meins TYPE resb-meins,
+         shkzg TYPE resb-shkzg,
+         enmng TYPE resb-enmng,
+         enwrt TYPE resb-enwrt,
+         waers TYPE resb-waers,
+         erfmg TYPE resb-erfmg,
+         erfme TYPE resb-erfme,
+       END OF ty_reservation_data.
+TYPES tt_reservation_data TYPE STANDARD TABLE OF ty_reservation_data WITH DEFAULT KEY.
+
+TYPES: BEGIN OF ty_material_text,
+         matnr TYPE makt-matnr,
+         maktx TYPE makt-maktx,
+       END OF ty_material_text.
+TYPES tt_material_text TYPE STANDARD TABLE OF ty_material_text WITH DEFAULT KEY.
+
+TYPES: BEGIN OF ty_plant_text,
+         werks TYPE t001w-werks,
+         name1 TYPE t001w-name1,
+       END OF ty_plant_text.
+TYPES tt_plant_text TYPE STANDARD TABLE OF ty_plant_text WITH DEFAULT KEY.
+
+TYPES: BEGIN OF ty_reservation_output,
+         reservation   TYPE resb-rsnum,
+         plant         TYPE char50,
+         material      TYPE mara-matnr,
+         mat_desc      TYPE makt-maktx,
+         item_no       TYPE resb-rspos,
+         order_no      TYPE resb-aufnr,
+         req_type      TYPE resb-bdart,
+         mov_type      TYPE resb-bwart,
+         gl_account    TYPE resb-saknr,
+         sloc          TYPE resb-lgort,
+         batch         TYPE resb-charg,
+         req_date      TYPE char10,
+         req_qty       TYPE resb-bdmng,
+         base_unit     TYPE resb-meins,
+         debit_credit  TYPE resb-shkzg,
+         withdraw_qty  TYPE resb-enmng,
+         withdr_value  TYPE resb-enwrt,
+         currency      TYPE resb-waers,
+         qty_une       TYPE resb-erfmg,
+         unit_entry    TYPE resb-erfme,
+         plant_sort    TYPE resb-werks,
+         cell_color    TYPE lvc_t_scol,
+       END OF ty_reservation_output.
+TYPES tt_reservation_output TYPE STANDARD TABLE OF ty_reservation_output WITH DEFAULT KEY.
+
+************************************************************************
+* HELPER CLASS
+************************************************************************
+CLASS lcl_format_helper DEFINITION.
+  PUBLIC SECTION.
+    CLASS-METHODS:
+      format_date_mdy
+        IMPORTING
+          iv_date        TYPE sydatum
+        RETURNING
+          VALUE(rv_text) TYPE char10,
+
+      format_time_military
+        IMPORTING
+          iv_time        TYPE syuzeit
+        RETURNING
+          VALUE(rv_text) TYPE char8.
+ENDCLASS.
+
+************************************************************************
+* SERVICE CLASS
+************************************************************************
+CLASS lcl_reservation_service DEFINITION.
+  PUBLIC SECTION.
+    CLASS-DATA:
+      gt_reservation_data TYPE tt_reservation_data,
+      gt_material_text    TYPE tt_material_text,
+      gt_plant_text       TYPE tt_plant_text,
+      gt_report_output    TYPE tt_reservation_output.
+
+    CLASS-METHODS:
+      validate_reservation_input
+        IMPORTING
+          it_reservation TYPE ty_r_reservation,
+
+      validate_material_input
+        IMPORTING
+          it_material TYPE ty_r_material,
+
+      validate_plant_input
+        IMPORTING
+          iv_plant TYPE resb-werks.
+
+    METHODS:
+      get_data
+        IMPORTING
+          it_reservation TYPE ty_r_reservation
+          it_material    TYPE ty_r_material
+          iv_plant       TYPE resb-werks
+          iv_highlight   TYPE abap_bool.
+
+  PRIVATE SECTION.
+    METHODS:
+      build_final_output
+        IMPORTING
+          iv_highlight TYPE abap_bool.
+ENDCLASS.
+
+************************************************************************
+* EVENT HANDLER CLASS
+************************************************************************
+CLASS lcl_reservation_events DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      on_link_click
+        FOR EVENT link_click OF cl_salv_events_table
+        IMPORTING row column.
+ENDCLASS.
+
+************************************************************************
+* VIEW CLASS
+************************************************************************
+CLASS lcl_reservation_view DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      display_write,
+      display_alv.
+ENDCLASS.
+
+************************************************************************
+* GLOBAL OBJECTS
+************************************************************************
+DATA: go_reservation_service TYPE REF TO lcl_reservation_service,
+      go_reservation_view    TYPE REF TO lcl_reservation_view.
+
+
+
+
+************************************************************************
+* SELECTION SCREEN
+************************************************************************
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-t01.
+  SELECT-OPTIONS:
+    so_reservation FOR resb-rsnum,
+    so_material    FOR mara-matnr.
+
+  PARAMETERS:
+    p_plant TYPE resb-werks.
+SELECTION-SCREEN END OF BLOCK b1.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE text-t02.
+  PARAMETERS:
+    p_writ RADIOBUTTON GROUP rg1,
+    p_alv  RADIOBUTTON GROUP rg1 DEFAULT 'X',
+    p_hili AS CHECKBOX DEFAULT 'X'.
+SELECTION-SCREEN END OF BLOCK b2.
+
+
+
+************************************************************************
+* HELPER CLASS IMPLEMENTATION
+************************************************************************
+CLASS lcl_format_helper IMPLEMENTATION.
+
+  METHOD format_date_mdy.
+    CLEAR rv_text.
+    IF iv_date IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    rv_text = |{ iv_date+4(2) }/{ iv_date+6(2) }/{ iv_date+0(4) }|.
+
+    IF rv_text+0(1) = '0'.
+      SHIFT rv_text LEFT BY 1 PLACES.
+    ENDIF.
+
+    IF rv_text+2(1) = '/' AND rv_text+3(1) = '0'.
+      rv_text = |{ rv_text+0(3) }{ rv_text+4 }|.
+    ELSEIF rv_text+1(1) = '/' AND rv_text+2(1) = '0'.
+      rv_text = |{ rv_text+0(2) }{ rv_text+3 }|.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD format_time_military.
+    CLEAR rv_text.
+    IF iv_time IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    rv_text = |{ iv_time+0(2) }:{ iv_time+2(2) }:{ iv_time+4(2) }|.
+  ENDMETHOD.
+
+ENDCLASS.
+
+************************************************************************
+* SERVICE CLASS IMPLEMENTATION
+************************************************************************
+CLASS lcl_reservation_service IMPLEMENTATION.
+
+  METHOD validate_reservation_input.
+    DATA lv_reservation TYPE rkpf-rsnum.
+    FIELD-SYMBOLS <fs_reservation> LIKE LINE OF it_reservation.
+
+    LOOP AT it_reservation ASSIGNING <fs_reservation>.
+
+      CHECK <fs_reservation>-sign = 'I'.
+
+      CASE <fs_reservation>-option.
+
+        WHEN 'EQ'.
+          IF <fs_reservation>-low IS NOT INITIAL.
+            SELECT SINGLE rsnum
+              INTO @lv_reservation
+              FROM rkpf
+              WHERE rsnum = @<fs_reservation>-low.
+            IF sy-subrc <> 0.
+              MESSAGE text-e01 TYPE 'E'.
+            ENDIF.
+          ENDIF.
+
+        WHEN 'BT'.
+          IF <fs_reservation>-low IS NOT INITIAL
+             AND <fs_reservation>-high IS NOT INITIAL.
+
+            SELECT SINGLE rsnum
+              INTO @lv_reservation
+              FROM rkpf
+              WHERE rsnum BETWEEN @<fs_reservation>-low AND @<fs_reservation>-high.
+
+            IF sy-subrc <> 0.
+              MESSAGE text-e01 TYPE 'E'.
+            ENDIF.
+          ENDIF.
+
+        WHEN 'CP' OR 'NP'.
+          IF <fs_reservation>-low IS NOT INITIAL.
+            SELECT SINGLE rsnum
+              INTO @lv_reservation
+              FROM rkpf
+              WHERE rsnum = @<fs_reservation>-low.
+            IF sy-subrc <> 0.
+              MESSAGE text-e01 TYPE 'E'.
+            ENDIF.
+          ENDIF.
+
+        WHEN OTHERS.
+          IF <fs_reservation>-low IS NOT INITIAL.
+            SELECT SINGLE rsnum
+              INTO @lv_reservation
+              FROM rkpf
+              WHERE rsnum = @<fs_reservation>-low.
+            IF sy-subrc <> 0.
+              MESSAGE text-e01 TYPE 'E'.
+            ENDIF.
+          ENDIF.
+
+      ENDCASE.
+
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD validate_material_input.
+    DATA lv_material TYPE mara-matnr.
+    FIELD-SYMBOLS <fs_material> LIKE LINE OF it_material.
+
+    LOOP AT it_material ASSIGNING <fs_material>.
+
+      CHECK <fs_material>-sign = 'I'.
+
+      CASE <fs_material>-option.
+
+        WHEN 'EQ'.
+          IF <fs_material>-low IS NOT INITIAL.
+            SELECT SINGLE matnr
+              INTO @lv_material
+              FROM mara
+              WHERE matnr = @<fs_material>-low.
+            IF sy-subrc <> 0.
+              MESSAGE text-e02 TYPE 'E'.
+            ENDIF.
+          ENDIF.
+
+        WHEN 'BT'.
+          IF <fs_material>-low IS NOT INITIAL
+             AND <fs_material>-high IS NOT INITIAL.
+
+            SELECT SINGLE matnr
+              INTO @lv_material
+              FROM mara
+              WHERE matnr BETWEEN @<fs_material>-low AND @<fs_material>-high.
+
+            IF sy-subrc <> 0.
+              MESSAGE text-e02 TYPE 'E'.
+            ENDIF.
+          ENDIF.
+
+        WHEN 'CP'.
+          IF <fs_material>-low IS NOT INITIAL.
+            SELECT SINGLE matnr
+              INTO @lv_material
+              FROM mara
+              WHERE matnr LIKE @<fs_material>-low.
+            IF sy-subrc <> 0.
+              MESSAGE text-e02 TYPE 'E'.
+            ENDIF.
+          ENDIF.
+
+        WHEN OTHERS.
+          IF <fs_material>-low IS NOT INITIAL.
+            SELECT SINGLE matnr
+              INTO @lv_material
+              FROM mara
+              WHERE matnr = @<fs_material>-low.
+            IF sy-subrc <> 0.
+              MESSAGE text-e02 TYPE 'E'.
+            ENDIF.
+          ENDIF.
+
+      ENDCASE.
+
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD validate_plant_input.
+    DATA lv_plant TYPE t001w-werks.
+
+    IF iv_plant IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    SELECT SINGLE werks
+      INTO @lv_plant
+      FROM t001w
+      WHERE werks = @iv_plant.
+
+    IF sy-subrc <> 0.
+      MESSAGE text-e03 TYPE 'E'.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD get_data.
+    DATA lt_plant_range TYPE rseloption.
+
+    CLEAR: gt_reservation_data,
+           gt_material_text,
+           gt_plant_text,
+           gt_report_output.
+
+    IF iv_plant IS NOT INITIAL.
+      APPEND VALUE rsdsselopt(
+        sign   = 'I'
+        option = 'EQ'
+        low    = iv_plant ) TO lt_plant_range.
+    ENDIF.
+
+    IF iv_plant IS INITIAL.
+      SELECT a~rsnum,
+             a~werks,
+             a~matnr,
+             a~rspos,
+             a~aufnr,
+             a~bdart,
+             a~bwart,
+             a~saknr,
+             a~lgort,
+             a~charg,
+             a~bdter,
+             a~bdmng,
+             a~meins,
+             a~shkzg,
+             a~enmng,
+             a~enwrt,
+             a~waers,
+             a~erfmg,
+             a~erfme
+        INTO TABLE @gt_reservation_data
+        FROM resb AS a
+        INNER JOIN mara AS b
+          ON a~matnr = b~matnr
+        WHERE a~rsnum IN @it_reservation
+          AND a~matnr IN @it_material.
+    ELSE.
+      SELECT a~rsnum,
+             a~werks,
+             a~matnr,
+             a~rspos,
+             a~aufnr,
+             a~bdart,
+             a~bwart,
+             a~saknr,
+             a~lgort,
+             a~charg,
+             a~bdter,
+             a~bdmng,
+             a~meins,
+             a~shkzg,
+             a~enmng,
+             a~enwrt,
+             a~waers,
+             a~erfmg,
+             a~erfme
+        INTO TABLE @gt_reservation_data
+        FROM resb AS a
+        INNER JOIN mara AS b
+          ON a~matnr = b~matnr
+        WHERE a~rsnum IN @it_reservation
+          AND a~matnr IN @it_material
+          AND a~werks IN @lt_plant_range.
+    ENDIF.
+
+    SORT gt_reservation_data BY rsnum werks matnr rspos.
+
+    IF gt_reservation_data IS INITIAL.
+      MESSAGE text-e04 TYPE 'S' DISPLAY LIKE 'E'.
+      LEAVE LIST-PROCESSING.
+    ENDIF.
+
+    SELECT matnr,
+           maktx
+      INTO TABLE @gt_material_text
+      FROM makt
+      FOR ALL ENTRIES IN @gt_reservation_data
+      WHERE matnr = @gt_reservation_data-matnr
+        AND spras = @sy-langu.
+
+    SORT gt_material_text BY matnr.
+
+    SELECT werks,
+           name1
+      INTO TABLE @gt_plant_text
+      FROM t001w
+      FOR ALL ENTRIES IN @gt_reservation_data
+      WHERE werks = @gt_reservation_data-werks.
+
+    SORT gt_plant_text BY werks.
+
+    build_final_output( iv_highlight = iv_highlight ).
+
+    IF gt_report_output IS INITIAL.
+      MESSAGE text-e04 TYPE 'S' DISPLAY LIKE 'E'.
+      LEAVE LIST-PROCESSING.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD build_final_output.
+    DATA: ls_reservation_data TYPE ty_reservation_data,
+          ls_material_text    TYPE ty_material_text,
+          ls_plant_text       TYPE ty_plant_text,
+          ls_report_output    TYPE ty_reservation_output,
+          ls_color            TYPE lvc_s_scol.
+
+    LOOP AT gt_reservation_data INTO ls_reservation_data.
+      CLEAR: ls_material_text, ls_plant_text, ls_report_output.
+
+      READ TABLE gt_material_text INTO ls_material_text
+        WITH KEY matnr = ls_reservation_data-matnr
+        BINARY SEARCH.
+
+      READ TABLE gt_plant_text INTO ls_plant_text
+        WITH KEY werks = ls_reservation_data-werks
+        BINARY SEARCH.
+
+      ls_report_output-reservation = ls_reservation_data-rsnum.
+
+      IF ls_plant_text-name1 IS INITIAL.
+        ls_report_output-plant = ls_reservation_data-werks.
+      ELSE.
+        ls_report_output-plant = |{ ls_reservation_data-werks } - { ls_plant_text-name1 }|.
+      ENDIF.
+
+      ls_report_output-material      = ls_reservation_data-matnr.
+      ls_report_output-mat_desc      = ls_material_text-maktx.
+      ls_report_output-item_no       = ls_reservation_data-rspos.
+      ls_report_output-order_no      = ls_reservation_data-aufnr.
+      ls_report_output-req_type      = ls_reservation_data-bdart.
+      ls_report_output-mov_type      = ls_reservation_data-bwart.
+      ls_report_output-gl_account    = ls_reservation_data-saknr.
+      ls_report_output-sloc          = ls_reservation_data-lgort.
+      ls_report_output-batch         = ls_reservation_data-charg.
+      ls_report_output-req_date      = lcl_format_helper=>format_date_mdy( ls_reservation_data-bdter ).
+      ls_report_output-req_qty       = ls_reservation_data-bdmng.
+      ls_report_output-base_unit     = ls_reservation_data-meins.
+      ls_report_output-debit_credit  = ls_reservation_data-shkzg.
+      ls_report_output-withdraw_qty  = ls_reservation_data-enmng.
+      ls_report_output-withdr_value  = ls_reservation_data-enwrt.
+      ls_report_output-currency      = ls_reservation_data-waers.
+      ls_report_output-qty_une       = ls_reservation_data-erfmg.
+      ls_report_output-unit_entry    = ls_reservation_data-erfme.
+      ls_report_output-plant_sort    = ls_reservation_data-werks.
+
+      IF ls_reservation_data-bdmng = 0.
+        CLEAR ls_color.
+        ls_color-fname = 'REQ_QTY'.
+        ls_color-color-col = 6.
+        ls_color-color-int = 1.
+        ls_color-color-inv = 0.
+        APPEND ls_color TO ls_report_output-cell_color.
+      ENDIF.
+
+      APPEND ls_report_output TO gt_report_output.
+    ENDLOOP.
+
+    SORT gt_report_output BY reservation ASCENDING
+                             plant_sort ASCENDING
+                             material ASCENDING
+                             item_no ASCENDING.
+  ENDMETHOD.
+
+ENDCLASS.
+
+************************************************************************
+* EVENT HANDLER IMPLEMENTATION
+************************************************************************
+CLASS lcl_reservation_events IMPLEMENTATION.
+  METHOD on_link_click.
+    READ TABLE lcl_reservation_service=>gt_report_output INTO DATA(ls_report_output) INDEX row.
+    IF sy-subrc <> 0.
+      RETURN.
+    ENDIF.
+
+    IF column = 'MATERIAL' AND p_hili = 'X'.
+      SET PARAMETER ID 'MAT' FIELD ls_report_output-material.
+      CALL TRANSACTION 'MM03' WITH AUTHORITY-CHECK AND SKIP FIRST SCREEN.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+************************************************************************
+* VIEW CLASS IMPLEMENTATION
+************************************************************************
+CLASS lcl_reservation_view IMPLEMENTATION.
+
+  METHOD display_write.
+    DATA: ls_report_output TYPE ty_reservation_output,
+          lv_exec_date     TYPE char10,
+          lv_exec_time     TYPE char8.
+
+    lv_exec_date = lcl_format_helper=>format_date_mdy( sy-datum ).
+    lv_exec_time = lcl_format_helper=>format_time_military( sy-uzeit ).
+
+    WRITE: / text-h01.
+    WRITE: / text-h02.
+    WRITE: / 'Executed by:', sy-uname.
+    WRITE: / 'Executed on:', lv_exec_date, lv_exec_time.
+    SKIP.
+
+    FORMAT COLOR COL_HEADING INTENSIFIED ON.
+    WRITE: / text-c01, 15 text-c02, 55 text-c03, 75 text-c04, 100 text-c05.
+    WRITE: / text-c06, 15 text-c07, 35 text-c08, 55 text-c09, 75 text-c10.
+    WRITE: / text-c11, 15 text-c12, 35 text-c13, 55 text-c14, 75 text-c15.
+    WRITE: / text-c16, 20 text-c17, 40 text-c18, 55 text-c19, 75 text-c20.
+    FORMAT RESET.
+
+    LOOP AT lcl_reservation_service=>gt_report_output INTO ls_report_output.
+      WRITE: / ls_report_output-reservation,
+               15 ls_report_output-plant,
+               55 ls_report_output-material,
+               75 ls_report_output-mat_desc,
+               100 ls_report_output-item_no.
+      WRITE: / ls_report_output-order_no,
+               15 ls_report_output-req_type,
+               35 ls_report_output-mov_type,
+               55 ls_report_output-gl_account,
+               75 ls_report_output-sloc.
+      WRITE: / ls_report_output-batch,
+               15 ls_report_output-req_date,
+               35 ls_report_output-req_qty,
+               55 ls_report_output-base_unit,
+               75 ls_report_output-debit_credit.
+      WRITE: / ls_report_output-withdraw_qty,
+               20 ls_report_output-withdr_value,
+               40 ls_report_output-currency,
+               55 ls_report_output-qty_une,
+               75 ls_report_output-unit_entry.
+      ULINE.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD display_alv.
+    DATA: lo_alv        TYPE REF TO cl_salv_table,
+          lo_columns    TYPE REF TO cl_salv_columns_table,
+          lo_column     TYPE REF TO cl_salv_column_table,
+          lo_functions  TYPE REF TO cl_salv_functions_list,
+          lo_display    TYPE REF TO cl_salv_display_settings,
+          lo_sorts      TYPE REF TO cl_salv_sorts,
+          lo_header     TYPE REF TO cl_salv_form_layout_grid,
+          lo_events     TYPE REF TO cl_salv_events_table,
+          lo_handler    TYPE REF TO lcl_reservation_events,
+          lv_exec_date  TYPE char10,
+          lv_exec_time  TYPE char8.
+
+    lv_exec_date = lcl_format_helper=>format_date_mdy( sy-datum ).
+    lv_exec_time = lcl_format_helper=>format_time_military( sy-uzeit ).
+
+    TRY.
+        cl_salv_table=>factory(
+          IMPORTING
+            r_salv_table = lo_alv
+          CHANGING
+            t_table      = lcl_reservation_service=>gt_report_output ).
+
+        lo_columns = lo_alv->get_columns( ).
+
+        TRY.
+            lo_columns->set_optimize( ).
+          CATCH cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_columns->set_color_column( 'CELL_COLOR' ).
+          CATCH cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'RESERVATION' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c01 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c01 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c01 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'PLANT' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c02 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c02 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c02 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'MATERIAL' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c03 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c03 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c03 ) ).
+            IF p_hili = 'X'.
+              lo_column->set_cell_type( if_salv_c_cell_type=>hotspot ).
+            ENDIF.
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'MAT_DESC' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c04 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c04 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c04 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'ITEM_NO' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c05 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c05 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c05 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'ORDER_NO' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c06 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c06 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c06 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'REQ_TYPE' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c07 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c07 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c07 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'MOV_TYPE' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c08 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c08 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c08 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'GL_ACCOUNT' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c09 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c09 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c09 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'SLOC' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c10 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c10 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c10 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'BATCH' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c11 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c11 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c11 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'REQ_DATE' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c12 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c12 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c12 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'REQ_QTY' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c13 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c13 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c13 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'BASE_UNIT' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c14 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c14 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c14 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'DEBIT_CREDIT' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c15 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c15 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c15 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'WITHDRAW_QTY' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c16 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c16 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c16 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'WITHDR_VALUE' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c17 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c17 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c17 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'CURRENCY' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c18 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c18 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c18 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'QTY_UNE' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c19 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c19 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c19 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'UNIT_ENTRY' ).
+            lo_column->set_short_text(  CONV scrtext_s( text-c20 ) ).
+            lo_column->set_medium_text( CONV scrtext_m( text-c20 ) ).
+            lo_column->set_long_text(   CONV scrtext_l( text-c20 ) ).
+          CATCH cx_salv_not_found cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'PLANT_SORT' ).
+            lo_column->set_technical( abap_true ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        TRY.
+            lo_column ?= lo_columns->get_column( 'CELL_COLOR' ).
+            lo_column->set_technical( abap_true ).
+          CATCH cx_salv_not_found.
+        ENDTRY.
+
+        lo_functions = lo_alv->get_functions( ).
+        lo_functions->set_all( abap_true ).
+
+        lo_display = lo_alv->get_display_settings( ).
+        lo_display->set_striped_pattern( abap_true ).
+        lo_display->set_list_header( text-h01 ).
+
+        CREATE OBJECT lo_header.
+
+        lo_header->create_label(
+          row    = 1
+          column = 1
+          text   = text-h01 ).
+
+        lo_header->create_label(
+          row    = 2
+          column = 1
+          text   = text-h02 ).
+
+        lo_header->create_label(
+          row    = 3
+          column = 1
+          text   = |Executed by: { sy-uname }| ).
+
+        lo_header->create_label(
+          row    = 4
+          column = 1
+          text   = |Executed on: { lv_exec_date } { lv_exec_time }| ).
+
+        lo_alv->set_top_of_list( lo_header ).
+
+        lo_sorts = lo_alv->get_sorts( ).
+
+        TRY.
+            lo_sorts->add_sort(
+              columnname = 'RESERVATION'
+              sequence   = if_salv_c_sort=>sort_up ).
+          CATCH cx_salv_not_found cx_salv_existing cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_sorts->add_sort(
+              columnname = 'PLANT_SORT'
+              sequence   = if_salv_c_sort=>sort_up
+              subtotal   = abap_true ).
+          CATCH cx_salv_not_found cx_salv_existing cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_sorts->add_sort(
+              columnname = 'MATERIAL'
+              sequence   = if_salv_c_sort=>sort_up ).
+          CATCH cx_salv_not_found cx_salv_existing cx_salv_data_error.
+        ENDTRY.
+
+        TRY.
+            lo_sorts->add_sort(
+              columnname = 'ITEM_NO'
+              sequence   = if_salv_c_sort=>sort_up ).
+          CATCH cx_salv_not_found cx_salv_existing cx_salv_data_error.
+        ENDTRY.
+
+        lo_events = lo_alv->get_event( ).
+        CREATE OBJECT lo_handler.
+        SET HANDLER lo_handler->on_link_click FOR lo_events.
+
+        lo_alv->display( ).
+
+      CATCH cx_salv_msg INTO DATA(lx_msg).
+        MESSAGE lx_msg->get_text( ) TYPE 'I'.
+    ENDTRY.
+  ENDMETHOD.
+
+ENDCLASS.
